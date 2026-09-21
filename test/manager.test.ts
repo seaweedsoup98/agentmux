@@ -5,6 +5,7 @@ import { delimiter, join } from 'node:path';
 import test from 'node:test';
 import { AgentManager } from '../src/manager.js';
 import { StateStore } from '../src/state.js';
+import type { ExecutionController } from '../src/types.js';
 import { writeFakeCommand } from './helpers.js';
 
 async function waitForJob(
@@ -141,4 +142,64 @@ test('teams record external-host supervision and parent-child relationships', as
   assert.equal(status.team.name, 'review');
   assert.equal(status.team.supervisorAgentId, undefined);
   assert.deepEqual(status.members, []);
+});
+
+
+test('manager recovers jobs owned by a previous broker instance even if its PID is live', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-recovery-'));
+  const store = new StateStore(join(root, 'state.json'));
+  const now = new Date().toISOString();
+
+  await store.transaction((state) => {
+    state.agents.a_stale = {
+      id: 'a_stale',
+      provider: 'codex',
+      nativeSessionId: 'thread-stale',
+      cwd: root,
+      access: 'read-only',
+      status: 'running',
+      activeJobId: 'j_stale',
+      latestJobId: 'j_stale',
+      createdAt: now,
+      updatedAt: now,
+    };
+    state.jobs.j_stale = {
+      id: 'j_stale',
+      agentId: 'a_stale',
+      status: 'running',
+      createdAt: now,
+      startedAt: now,
+      ownerPid: process.pid,
+      ownerInstanceId: 'b_previous',
+      ownerMode: 'broker',
+    };
+  });
+
+  const execution: ExecutionController = {
+    owner: {
+      pid: process.pid,
+      instanceId: 'b_current',
+      persistent: true,
+      mode: 'broker',
+    },
+    async submit() {},
+    async cancel() {},
+    async status() {
+      return {
+        mode: 'broker',
+        owner: this.owner,
+        activeJobs: 0,
+      };
+    },
+    async shutdown() {},
+  };
+
+  const manager = await AgentManager.create(store, undefined, execution);
+  const job = await manager.result('j_stale');
+  const agent = await manager.status('a_stale');
+
+  assert.equal(job.status, 'failed');
+  assert.match(job.error ?? '', /no longer running/);
+  assert.equal(agent.agent.status, 'idle');
+  assert.equal(agent.agent.activeJobId, undefined);
 });
