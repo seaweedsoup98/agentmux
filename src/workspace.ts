@@ -49,6 +49,7 @@ export interface WorktreeApplyResult {
 function git(
   args: string[],
   env?: NodeJS.ProcessEnv,
+  preserveOutput = false,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -65,7 +66,7 @@ function git(
           reject(new Error(detail));
           return;
         }
-        resolve(stdout.trimEnd());
+        resolve(preserveOutput ? stdout : stdout.trim());
       },
     );
   });
@@ -199,6 +200,7 @@ export async function diffWorktree(
         baseCommit,
       ],
       env,
+      true,
     );
     return {
       worktreePath,
