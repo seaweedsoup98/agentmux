@@ -79,7 +79,61 @@ export class JobRuntime {
         : provider.resume(runRequest, prepared.nativeSessionId as string);
       command.env = agentEnvironment(prepared);
 
-      const processResult = await this.runner.run(jobId, command);
+      const recentProgress = new Map<string, number>();
+      const processResult = await this.runner.run(
+        jobId,
+        command,
+        provider.parseProgressLine
+          ? async (line) => {
+              const updates = provider.parseProgressLine?.(line) ?? [];
+              for (const update of updates) {
+                const key = JSON.stringify([
+                  update.kind,
+                  update.label,
+                  update.state,
+                  update.detail,
+                ]);
+                const nowMs = Date.now();
+                const previous = recentProgress.get(key) ?? 0;
+                if (nowMs - previous < 1000) continue;
+                recentProgress.set(key, nowMs);
+
+                await this.store.transaction((state) => {
+                  const liveAgent = state.agents[agentId];
+                  const liveJob = state.jobs[jobId];
+                  if (
+                    !liveAgent ||
+                    !liveJob ||
+                    liveJob.status !== 'running' ||
+                    liveJob.ownerInstanceId !== this.owner.instanceId
+                  ) {
+                    return;
+                  }
+
+                  const detail = {
+                    provider: prepared.provider,
+                    ...(update.label ? { label: update.label } : {}),
+                    ...(update.state ? { state: update.state } : {}),
+                    ...(update.detail ?? {}),
+                  };
+                  appendEvent(state, {
+                    type:
+                      update.kind === 'tool_started'
+                        ? 'provider.tool_started'
+                        : update.kind === 'tool_completed'
+                          ? 'provider.tool_completed'
+                          : 'provider.progress',
+                    createdAt: new Date().toISOString(),
+                    teamId: liveAgent.teamId,
+                    agentId: liveAgent.id,
+                    jobId: liveJob.id,
+                    detail,
+                  });
+                });
+              }
+            }
+          : undefined,
+      );
       const parsed = provider.parse(processResult.stdout);
 
       await this.store.transaction((state) => {
