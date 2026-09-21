@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { doctorProviders } from './doctor.js';
+import { doctorHosts, doctorProviders } from './doctor.js';
 import { AgentManager } from './manager.js';
 import { ACCESS_MODES, DELEGATION_STATUSES, EVENT_TYPES, PROVIDERS, WORKSPACE_MODES } from './types.js';
 
@@ -580,10 +580,14 @@ export function buildServer(manager: AgentManager): McpServer {
     'doctor',
     {
       description:
-        'Check whether each supported provider CLI is installed and report its version.',
+        'Check provider install/auth health and whether agentmux is configured in installed MCP hosts.',
       inputSchema: z.object({}),
     },
-    async () => text(await doctorProviders()),
+    async () =>
+      text({
+        providers: await doctorProviders(),
+        hosts: await doctorHosts(),
+      }),
   );
 
   return server;
