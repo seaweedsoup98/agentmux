@@ -65,6 +65,30 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
     assert.equal(second.status, 'succeeded');
     assert.equal(second.response, 'follow-up');
     assert.equal(manager.status(agent.id).agent.status, 'idle');
+
+    const batch = await manager.spawnMany([
+      {
+        provider: 'codex',
+        prompt: 'batch one',
+        cwd,
+        access: 'read-only',
+      },
+      {
+        provider: 'codex',
+        prompt: 'batch two',
+        cwd,
+        access: 'read-only',
+      },
+    ]);
+    const waited = await manager.wait(
+      batch.map(({ job: batchJob }) => batchJob.id),
+      3000,
+    );
+    assert.equal(waited.timedOut, false);
+    assert.deepEqual(
+      waited.jobs.map((batchJob) => batchJob.status),
+      ['succeeded', 'succeeded'],
+    );
   } finally {
     process.env.PATH = previousPath;
   }
