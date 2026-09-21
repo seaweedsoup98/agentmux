@@ -54,7 +54,9 @@ agentmux team
  `- Codex researcher
 ```
 
-A managed agent can also be recorded as the supervisor of another agent. `spawn` accepts `team_id` and `parent_agent_id`, so nested supervision can be represented without changing provider adapters.
+A managed agent can also be recorded as the supervisor of another agent. `spawn` accepts `team_id` and `parent_agent_id`, so nested supervision can be represented in the state model without changing provider adapters.
+
+> **MVP limitation:** use one agentmux MCP process as the control tower for a team. Multiple agentmux server processes do not yet coordinate writes to the same state store, so recursive/nested delegation where child hosts invoke their own agentmux instance is not yet supported.
 
 ## Requirements
 
@@ -173,6 +175,7 @@ These mappings are intentionally conservative and are not identical security mod
 ## Roadmap
 
 - worktree cleanup and merge helpers
+- process-safe local broker for multiple MCP hosts
 - agent-to-agent message routing and inboxes
 - streaming progress and richer tool events
 - persistent named roles and reusable team templates
