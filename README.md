@@ -19,10 +19,10 @@ Codex / Claude Code / any MCP host
 
 The MCP server exposes a provider-neutral session API:
 
-- `spawn` — create an agent session and start its first job asynchronously
+- `spawn` / `spawn_many` — create one or many agent sessions and start their jobs asynchronously
 - `send` — continue the same provider-native conversation
 - `status` — inspect an agent and its latest job
-- `result` — fetch a job result
+- `result` / `wait` — fetch results or wait for multiple jobs in one MCP call
 - `list` — list local sessions
 - `kill` — cancel an active job and stop the session
 - `team_create`, `team_status`, `team_list` — group sessions and record supervision
