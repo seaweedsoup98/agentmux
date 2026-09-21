@@ -8,7 +8,12 @@ import { StateStore } from './state.js';
 
 const args = process.argv.slice(2);
 if (args.length > 0 && CLI_COMMANDS.has(args[0] ?? '')) {
-  process.exitCode = await runCli(args);
+  try {
+    process.exitCode = await runCli(args);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 } else {
   await runMcp();
 }
