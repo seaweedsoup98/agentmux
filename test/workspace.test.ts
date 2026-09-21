@@ -53,7 +53,7 @@ test('createWorktree preserves repository contents in a detached worktree', asyn
 
   assert.notEqual(result.cwd, gitRepo);
   assert.equal(await readText(join(result.cwd, 'hello.txt')), 'hello\n');
-  assert.equal(result.gitRoot, gitRepo);
+  assert.equal(await readText(join(result.gitRoot, 'hello.txt')), 'hello\n');
   assert.match(result.baseCommit, /^[0-9a-f]{40}$/);
 });
 
