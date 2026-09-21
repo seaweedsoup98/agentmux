@@ -18,6 +18,7 @@ export interface ProviderHealth {
   version?: string;
   error?: string;
   loginHint?: string;
+  installHint?: string;
 }
 
 export interface HostHealth {
@@ -84,6 +85,7 @@ async function checkProvider(
       auth: 'not_applicable',
       error: version.error,
       loginHint: loginHint(provider),
+      installHint: installHint(provider),
     };
   }
 
@@ -99,6 +101,7 @@ async function checkProvider(
         ? 'Timed out while running ' + command + ' --version'
         : version.stderr || version.stdout || 'Exited with code ' + version.exitCode,
       loginHint: loginHint(provider),
+      installHint: installHint(provider),
     };
   }
 
@@ -172,6 +175,15 @@ async function checkAuth(
       firstLine(output) ??
       'Could not determine authentication status',
   };
+}
+
+function installHint(provider: ProviderName): string {
+  if (provider === 'codex') return 'npm install -g @openai/codex';
+  if (provider === 'claude') return 'npm install -g @anthropic-ai/claude-code';
+  if (process.platform === 'win32') {
+    return 'PowerShell: irm https://antigravity.google/cli/install.ps1 | iex';
+  }
+  return 'curl -fsSL https://antigravity.google/cli/install.sh | bash';
 }
 
 function loginHint(provider: ProviderName): string {
