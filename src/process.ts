@@ -60,6 +60,10 @@ export class ProcessRunner {
     });
   }
 
+  activeCount(): number {
+    return this.active.size;
+  }
+
   cancel(jobId: string): boolean {
     const child = this.active.get(jobId);
     if (!child) return false;
