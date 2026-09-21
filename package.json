@@ -26,7 +26,8 @@
     "start": "node dist/index.js",
     "prepublishOnly": "npm run check",
     "e2e:real": "tsx src/e2e-real.ts",
-    "e2e:real:matrix": "tsx src/e2e-real.ts --matrix"
+    "e2e:real:matrix": "tsx src/e2e-real.ts --matrix",
+    "release:check": "node scripts/release-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
@@ -58,5 +59,8 @@
     "multi-agent",
     "coding-agent"
   ],
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  }
 }
