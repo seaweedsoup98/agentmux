@@ -101,12 +101,16 @@ export async function runSetup(options: SetupOptions = {}): Promise<SetupResult>
 export async function resolveRuntimeSpec(): Promise<RuntimeSpec> {
   const packageRoot = fileURLToPath(new URL('../', import.meta.url));
   const entry = join(packageRoot, 'dist', 'index.js');
+  const packageJson = JSON.parse(
+    await readFile(join(packageRoot, 'package.json'), 'utf8'),
+  ) as { name?: string };
+  const publishedSpec = (packageJson.name ?? "@jiho.ko/agentmux") + '@latest';
   const npxLike = /[\\/]_npx[\\/]/i.test(packageRoot);
 
   if (npxLike) {
     return {
       command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      args: ['-y', 'agentmux@latest'],
+      args: ['-y', publishedSpec],
       source: 'npx',
     };
   }
@@ -121,7 +125,7 @@ export async function resolveRuntimeSpec(): Promise<RuntimeSpec> {
   } catch {
     return {
       command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      args: ['-y', 'agentmux@latest'],
+      args: ['-y', publishedSpec],
       source: 'npx',
     };
   }
