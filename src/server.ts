@@ -26,6 +26,7 @@ export function buildServer(manager: AgentManager): McpServer {
         'Use agentmux as a delegation runtime while the current MCP host remains the default supervisor. ' +
         'Managed child agents should call whoami to discover their identity and team. Prefer message_send for attributed ' +
         'agent-to-agent communication; wake=true starts a new turn only when the recipient is idle and resumable. ' +
+        'When a managed agent wakes a peer and needs that work to finish, it should wait for the returned wakeJob before ending its own turn. ' +
         'Use inbox/message_ack for persisted messages. Prefer spawn_many for independent parallel tasks and wait instead ' +
         'of tight result polling. Use read-only access for analysis/review unless edits are needed. Keep workspace=auto ' +
         'unless explicit isolation is required. Do not use full access unless the task requires it.',

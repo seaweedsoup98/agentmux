@@ -130,6 +130,14 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
       () => managerA.status(c.agent.id),
       /own team/,
     );
+    await assert.rejects(
+      () => managerA.send(c.agent.id, 'bypass attempt'),
+      /own team/,
+    );
+    await assert.rejects(
+      () => managerA.kill(b.agent.id),
+      /descendants/,
+    );
 
     const visible = await managerA.list();
     assert.ok(visible.some((agent) => agent.id === a.agent.id));

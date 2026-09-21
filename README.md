@@ -162,6 +162,8 @@ message_send(
 
 Messages are persisted before delivery. `wake=false` leaves the message unread in the peer's inbox. `wake=true` additionally resumes the peer's provider-native session when that peer is idle and resumable; if it is busy, the wake fails but the message remains in the inbox.
 
+A wake job is owned by the agentmux MCP process that launched it. A nested managed agent that needs the peer's work to complete should call `wait` on the returned `wakeJob.id` before ending its own turn. A detached broker that lets nested wake jobs outlive their launching host is intentionally left for a later layer.
+
 ```text
 inbox(unread_only=true)
 message_ack(message_ids=["msg_..."])
