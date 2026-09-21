@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { StateStore } from '../src/state.js';
 
-test('state store migrates version 1 state to version 3', async () => {
+test('state store migrates version 1 state to version 4', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agentmux-state-v1-'));
   const path = join(root, 'state.json');
   await writeFile(
@@ -20,20 +20,26 @@ test('state store migrates version 1 state to version 3', async () => {
   const store = new StateStore(path);
   const state = await store.load();
 
-  assert.equal(state.version, 3);
+  assert.equal(state.version, 4);
   assert.deepEqual(state.teams, {});
   assert.deepEqual(state.messages, {});
+  assert.deepEqual(state.events, []);
+  assert.equal(state.nextEventSeq, 1);
 
   await store.transaction(() => undefined);
   const persisted = JSON.parse(await readFile(path, 'utf8')) as {
     version: number;
     messages: object;
+    events: unknown[];
+    nextEventSeq: number;
   };
-  assert.equal(persisted.version, 3);
+  assert.equal(persisted.version, 4);
   assert.deepEqual(persisted.messages, {});
+  assert.deepEqual(persisted.events, []);
+  assert.equal(persisted.nextEventSeq, 1);
 });
 
-test('state store migrates version 2 state to version 3', async () => {
+test('state store migrates version 2 state to version 4', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agentmux-state-v2-'));
   const path = join(root, 'state.json');
   await writeFile(
@@ -47,8 +53,30 @@ test('state store migrates version 2 state to version 3', async () => {
   );
 
   const state = await new StateStore(path).load();
-  assert.equal(state.version, 3);
+  assert.equal(state.version, 4);
   assert.deepEqual(state.messages, {});
+  assert.deepEqual(state.events, []);
+  assert.equal(state.nextEventSeq, 1);
+});
+
+test('state store migrates version 3 state to version 4', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-state-v3-'));
+  const path = join(root, 'state.json');
+  await writeFile(
+    path,
+    JSON.stringify({
+      version: 3,
+      agents: {},
+      jobs: {},
+      teams: {},
+      messages: {},
+    }),
+  );
+
+  const state = await new StateStore(path).load();
+  assert.equal(state.version, 4);
+  assert.deepEqual(state.events, []);
+  assert.equal(state.nextEventSeq, 1);
 });
 
 test('transactions from independent stores do not lose updates', async () => {
