@@ -134,6 +134,9 @@ function printDoctor(
         auth +
         '\n',
     );
+    if (provider.state === 'missing' && provider.installHint) {
+      process.stdout.write('  install: ' + provider.installHint + '\n');
+    }
     if (provider.state === 'auth_required' && provider.loginHint) {
       process.stdout.write('  login: ' + provider.loginHint + '\n');
     }
