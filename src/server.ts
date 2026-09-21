@@ -19,7 +19,17 @@ function failure(error: unknown) {
 }
 
 export function buildServer(manager: AgentManager): McpServer {
-  const server = new McpServer({ name: 'agentmux', version: '0.1.0' });
+  const server = new McpServer(
+    { name: 'agentmux', version: '0.1.0' },
+    {
+      instructions:
+        'Use agentmux as a delegation runtime while the current MCP host remains the default supervisor. ' +
+        'Use doctor when provider availability is unknown. Prefer spawn_many for independent parallel tasks ' +
+        'and wait instead of tight result polling. Use read-only access for analysis/review unless edits are needed. ' +
+        'Keep workspace=auto unless explicit isolation is required; auto only isolates concurrent writable shared agents. ' +
+        'Use teams to record supervision. Do not use full access or nested delegation unless the task requires it.',
+    },
+  );
 
   server.registerTool(
     'spawn',

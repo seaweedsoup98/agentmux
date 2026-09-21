@@ -61,6 +61,56 @@ A managed agent can also be recorded as the supervisor of another agent. `spawn`
 - Node.js 20+
 - At least one supported CLI installed and authenticated: `codex`, `claude`, or `agy`
 
+## Install from a local checkout
+
+Until the package is published to npm, build a local checkout first:
+
+```bash
+git clone https://github.com/seaweedsoup98/agentmux.git
+cd agentmux
+npm install
+npm run build
+```
+
+Then register the built stdio server with whichever coding-agent UI you want to use as the control tower.
+
+### Codex CLI
+
+```bash
+codex mcp add agentmux -- node /absolute/path/to/agentmux/dist/index.js
+codex mcp list
+```
+
+Codex CLI and the Codex IDE/desktop surfaces on the same host share Codex MCP configuration.
+
+### Claude Code
+
+```bash
+claude mcp add agentmux --scope user -- node /absolute/path/to/agentmux/dist/index.js
+claude mcp list
+```
+
+Remove `--scope user` if you only want the server registered for the current project.
+
+### Antigravity CLI
+
+Open `/mcp` and add a local stdio server, or add it to `~/.gemini/config/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "agentmux": {
+      "command": "node",
+      "args": ["/absolute/path/to/agentmux/dist/index.js"]
+    }
+  }
+}
+```
+
+A workspace-only Antigravity configuration can instead live at `.agents/mcp_config.json`.
+
+On Windows, forward-slash paths such as `C:/code/agentmux/dist/index.js` are convenient inside JSON.
+
 ## Development
 
 ```bash
