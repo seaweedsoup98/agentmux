@@ -58,13 +58,13 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
     const first = await waitForJob(manager, job.id);
     assert.equal(first.status, 'succeeded');
     assert.equal(first.response, 'first');
-    assert.equal(await manager.status(agent.id).agent.nativeSessionId, 'thread-test');
+    assert.equal((await manager.status(agent.id)).agent.nativeSessionId, 'thread-test');
 
     const followUp = await manager.send(agent.id, 'second prompt');
     const second = await waitForJob(manager, followUp.id);
     assert.equal(second.status, 'succeeded');
     assert.equal(second.response, 'follow-up');
-    assert.equal(await manager.status(agent.id).agent.status, 'idle');
+    assert.equal((await manager.status(agent.id)).agent.status, 'idle');
 
     const batch = await manager.spawnMany([
       {
