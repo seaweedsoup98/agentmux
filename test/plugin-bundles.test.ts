@@ -38,7 +38,7 @@ test('all native plugin bundles launch the published agentmux package', async ()
     const value = await json(path);
     const servers = value.mcpServers as Record<
       string,
-      { command: string; args: string[] }
+      { command: string; args: string[]; type?: string }
     >;
     assert.equal(servers.agentmux?.command, 'npx');
     assert.deepEqual(servers.agentmux?.args, ['-y', 'agentmux@latest']);
