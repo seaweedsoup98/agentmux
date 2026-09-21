@@ -23,7 +23,11 @@ const owner: ExecutionOwner = {
 };
 const runtime = new JobRuntime(store, owner);
 let lastRequestAt = Date.now();
-const IDLE_MS = 15 * 60_000;
+const IDLE_MS = Math.max(
+  1_000,
+  Number.parseInt(process.env.AGENTMUX_BROKER_IDLE_MS ?? '', 10) ||
+    15 * 60_000,
+);
 
 if (process.platform !== 'win32') {
   await rm(endpoint, { force: true }).catch(() => undefined);
