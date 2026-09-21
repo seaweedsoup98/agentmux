@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join } from 'node:path';
 import { agentmuxHome } from './state.js';
 import type {
   AccessMode,
@@ -113,10 +113,9 @@ export async function createWorktree(
   }
 
   const baseCommit = await git(['-C', gitRoot, 'rev-parse', 'HEAD']);
-  const relativeCwd = relative(gitRoot, baseCwd);
-  if (relativeCwd.startsWith('..')) {
-    throw new Error('cwd is outside the resolved Git root');
-  }
+  const relativeCwd = (
+    await git(['-C', baseCwd, 'rev-parse', '--show-prefix'])
+  ).replace(/[\\/]+$/, '');
 
   const worktreePath = join(home, 'worktrees', agentId);
   await mkdir(dirname(worktreePath), { recursive: true });
