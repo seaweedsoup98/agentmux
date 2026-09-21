@@ -63,7 +63,7 @@ try {
       name: provider + ':availability',
       ok: false,
       durationMs: 0,
-      detail: 'Provider CLI is unavailable or unauthenticated: ' +
+      detail: 'Provider CLI is unavailable: ' +
         (health.find((item) => item.provider === provider)?.error ?? 'unknown'),
     });
   }
