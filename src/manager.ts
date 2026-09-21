@@ -7,6 +7,7 @@ import { StateStore } from './state.js';
 import { chooseWorkspace, createWorktree } from './workspace.js';
 import type {
   AccessMode,
+  AgentDelegation,
   AgentEvent,
   AgentEventType,
   AgentJob,
@@ -49,6 +50,13 @@ export interface EventsOptions {
   teamId?: string;
   agentId?: string;
   types?: AgentEventType[];
+  limit?: number;
+}
+
+export interface DelegationListOptions {
+  teamId?: string;
+  agentId?: string;
+  status?: AgentDelegation['status'];
   limit?: number;
 }
 
@@ -556,6 +564,199 @@ export class AgentManager {
     });
   }
 
+  async delegate(
+    toAgentId: string,
+    task: string,
+    wake = true,
+  ): Promise<{
+    delegation: AgentDelegation;
+    message: AgentMessage;
+    wakeJob?: AgentJob;
+    wakeError?: string;
+  }> {
+    const delegation = await this.store.transaction((state) => {
+      const target = this.requireAgent(state, toAgentId);
+      this.assertCallerCanAccessAgent(state, target);
+      const caller = this.caller(state);
+      const now = new Date().toISOString();
+      const next: AgentDelegation = {
+        id: this.id('d'),
+        teamId: target.teamId ?? caller?.teamId,
+        fromAgentId: caller?.id,
+        toAgentId: target.id,
+        task,
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      };
+      state.delegations[next.id] = next;
+      this.appendEvent(state, {
+        type: 'delegation.created',
+        createdAt: now,
+        teamId: next.teamId,
+        agentId: next.toAgentId,
+        actorAgentId: next.fromAgentId,
+        detail: { delegationId: next.id, wakeRequested: wake },
+      });
+      return structuredClone(next);
+    });
+
+    const delivery = await this.messageSend(
+      toAgentId,
+      '[agentmux delegation ' + delegation.id + ']\n' + task,
+      wake,
+    );
+
+    const updated = await this.store.transaction((state) => {
+      const stored = state.delegations[delegation.id];
+      if (!stored) throw new Error('Delegation disappeared: ' + delegation.id);
+      stored.messageId = delivery.message.id;
+      stored.wakeJobId = delivery.wakeJob?.id;
+      if (delivery.wakeJob) {
+        stored.status = 'active';
+        stored.acceptedAt = new Date().toISOString();
+        stored.updatedAt = stored.acceptedAt;
+        this.appendEvent(state, {
+          type: 'delegation.accepted',
+          createdAt: stored.acceptedAt,
+          teamId: stored.teamId,
+          agentId: stored.toAgentId,
+          actorAgentId: stored.fromAgentId,
+          jobId: stored.wakeJobId,
+          messageId: stored.messageId,
+          detail: { delegationId: stored.id, automatic: true },
+        });
+      }
+      return structuredClone(stored);
+    });
+
+    return {
+      delegation: updated,
+      message: delivery.message,
+      wakeJob: delivery.wakeJob,
+      wakeError: delivery.wakeError,
+    };
+  }
+
+  async delegations(options: DelegationListOptions = {}): Promise<AgentDelegation[]> {
+    const state = await this.store.load();
+    const caller = this.caller(state);
+    if (caller && options.teamId && options.teamId !== caller.teamId) {
+      throw new Error('Managed agents can only read delegations from their own team');
+    }
+    if (caller && options.agentId) {
+      const target = this.requireAgent(state, options.agentId);
+      this.assertCallerCanAccessAgent(state, target);
+    }
+    const limit = Math.max(1, Math.min(options.limit ?? 100, 500));
+    return Object.values(state.delegations)
+      .filter((delegation) => !options.teamId || delegation.teamId === options.teamId)
+      .filter(
+        (delegation) =>
+          !options.agentId ||
+          delegation.toAgentId === options.agentId ||
+          delegation.fromAgentId === options.agentId,
+      )
+      .filter((delegation) => !options.status || delegation.status === options.status)
+      .filter((delegation) => {
+        if (!caller) return true;
+        if (delegation.toAgentId === caller.id || delegation.fromAgentId === caller.id) {
+          return true;
+        }
+        return Boolean(caller.teamId && delegation.teamId === caller.teamId);
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit)
+      .map((delegation) => structuredClone(delegation));
+  }
+
+  async acceptDelegation(delegationId: string): Promise<AgentDelegation> {
+    return this.store.transaction((state) => {
+      const delegation = this.requireDelegation(state, delegationId);
+      const caller = this.caller(state);
+      if (caller && delegation.toAgentId !== caller.id) {
+        throw new Error('Managed agents can only accept delegations assigned to themselves');
+      }
+      if (delegation.status !== 'pending') {
+        throw new Error('Delegation is not pending: ' + delegation.status);
+      }
+      const now = new Date().toISOString();
+      delegation.status = 'active';
+      delegation.acceptedAt = now;
+      delegation.updatedAt = now;
+      this.appendEvent(state, {
+        type: 'delegation.accepted',
+        createdAt: now,
+        teamId: delegation.teamId,
+        agentId: delegation.toAgentId,
+        actorAgentId: caller?.id,
+        messageId: delegation.messageId,
+        detail: { delegationId: delegation.id, automatic: false },
+      });
+      return structuredClone(delegation);
+    });
+  }
+
+  async completeDelegation(
+    delegationId: string,
+    summary?: string,
+  ): Promise<AgentDelegation> {
+    return this.store.transaction((state) => {
+      const delegation = this.requireDelegation(state, delegationId);
+      const caller = this.caller(state);
+      if (caller && delegation.toAgentId !== caller.id) {
+        throw new Error('Managed agents can only complete delegations assigned to themselves');
+      }
+      if (delegation.status === 'completed' || delegation.status === 'canceled') {
+        throw new Error('Delegation is already terminal: ' + delegation.status);
+      }
+      const now = new Date().toISOString();
+      delegation.status = 'completed';
+      delegation.completedAt = now;
+      delegation.updatedAt = now;
+      delegation.summary = summary;
+      this.appendEvent(state, {
+        type: 'delegation.completed',
+        createdAt: now,
+        teamId: delegation.teamId,
+        agentId: delegation.toAgentId,
+        actorAgentId: caller?.id,
+        detail: { delegationId: delegation.id },
+      });
+      return structuredClone(delegation);
+    });
+  }
+
+  async cancelDelegation(delegationId: string): Promise<AgentDelegation> {
+    return this.store.transaction((state) => {
+      const delegation = this.requireDelegation(state, delegationId);
+      const caller = this.caller(state);
+      if (
+        caller &&
+        caller.id !== delegation.fromAgentId &&
+        caller.id !== delegation.toAgentId
+      ) {
+        throw new Error('Managed agents can only cancel their own delegations');
+      }
+      if (delegation.status === 'completed' || delegation.status === 'canceled') {
+        throw new Error('Delegation is already terminal: ' + delegation.status);
+      }
+      const now = new Date().toISOString();
+      delegation.status = 'canceled';
+      delegation.canceledAt = now;
+      delegation.updatedAt = now;
+      this.appendEvent(state, {
+        type: 'delegation.canceled',
+        createdAt: now,
+        teamId: delegation.teamId,
+        agentId: delegation.toAgentId,
+        actorAgentId: caller?.id,
+        detail: { delegationId: delegation.id },
+      });
+      return structuredClone(delegation);
+    });
+  }
+
   async events(options: EventsOptions = {}): Promise<AgentEvent[]> {
     const state = await this.store.load();
     return this.selectEvents(state, options).map((event) => structuredClone(event));
@@ -1059,6 +1260,15 @@ export class AgentManager {
     const team = state.teams[teamId];
     if (!team) throw new Error('Unknown team: ' + teamId);
     return team;
+  }
+
+  private requireDelegation(
+    state: AgentmuxState,
+    delegationId: string,
+  ): AgentDelegation {
+    const delegation = state.delegations[delegationId];
+    if (!delegation) throw new Error('Unknown delegation: ' + delegationId);
+    return delegation;
   }
 
   private id(prefix: string): string {
