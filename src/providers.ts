@@ -73,11 +73,13 @@ const codex: ProviderAdapter = {
     return { command: 'codex', args, cwd: request.cwd };
   },
   resume(request, nativeSessionId): CommandSpec {
-    return {
-      command: 'codex',
-      args: ['exec', 'resume', '--json', nativeSessionId, request.prompt],
-      cwd: request.cwd,
-    };
+    const args = ['exec', '--json', '--sandbox', codexSandbox(request.access)];
+    if (request.model) args.push('--model', request.model);
+    if (request.effort) {
+      args.push('-c', 'model_reasoning_effort="' + request.effort + '"');
+    }
+    args.push('resume', nativeSessionId, request.prompt);
+    return { command: 'codex', args, cwd: request.cwd };
   },
   parse(stdout): ProviderOutput {
     let nativeSessionId: string | undefined;
@@ -122,6 +124,7 @@ const claude: ProviderAdapter = {
   start(request): CommandSpec {
     const args = ['-p', request.prompt, '--output-format', 'json', ...claudePermissionArgs(request.access)];
     if (request.model) args.push('--model', request.model);
+    if (request.effort) args.push('--effort', request.effort);
     return { command: 'claude', args, cwd: request.cwd };
   },
   resume(request, nativeSessionId): CommandSpec {
@@ -134,6 +137,8 @@ const claude: ProviderAdapter = {
       nativeSessionId,
       ...claudePermissionArgs(request.access),
     ];
+    if (request.model) args.push('--model', request.model);
+    if (request.effort) args.push('--effort', request.effort);
     return { command: 'claude', args, cwd: request.cwd };
   },
   parse(stdout): ProviderOutput {
