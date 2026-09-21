@@ -98,8 +98,15 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
     const waited = await manager.wait(batchJobIds, 3000);
     assert.equal(waited.timedOut, false);
     assert.deepEqual(
-      waited.jobs.map((batchJob) => batchJob.status),
-      ['succeeded', 'succeeded'],
+      waited.jobs.map((batchJob) => ({
+        status: batchJob.status,
+        error: batchJob.error,
+        stderr: batchJob.stderr,
+      })),
+      [
+        { status: 'succeeded', error: undefined, stderr: undefined },
+        { status: 'succeeded', error: undefined, stderr: undefined },
+      ],
     );
 
     const partial = await manager.spawnMany([
