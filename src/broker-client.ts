@@ -100,8 +100,8 @@ async function ensureBroker(
     const second = await hello(endpoint, token).catch(() => undefined);
     if (second?.owner) return second.owner;
 
-    const script = await brokerScriptPath();
-    const child = spawn(process.execPath, [...process.execArgv, script], {
+    const launch = await brokerLaunchSpec();
+    const child = spawn(process.execPath, [...launch.nodeArgs, launch.script], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
@@ -126,13 +126,19 @@ async function ensureBroker(
   }
 }
 
-async function brokerScriptPath(): Promise<string> {
+async function brokerLaunchSpec(): Promise<{
+  script: string;
+  nodeArgs: string[];
+}> {
   const js = fileURLToPath(new URL('./broker.js', import.meta.url));
   try {
     await access(js);
-    return js;
+    return { script: js, nodeArgs: [] };
   } catch {
-    return fileURLToPath(new URL('./broker.ts', import.meta.url));
+    return {
+      script: fileURLToPath(new URL('./broker.ts', import.meta.url)),
+      nodeArgs: ['--import', 'tsx'],
+    };
   }
 }
 
