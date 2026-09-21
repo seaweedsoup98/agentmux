@@ -44,9 +44,9 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 
   if (command === 'setup') {
-    const hostsRaw = valueAfter(argv, '--hosts');
+    const hostsRaw = valuesAfter(argv, '--hosts');
     const result = await runSetup({
-      hosts: hostsRaw ? parseHostList(hostsRaw) : undefined,
+      hosts: hostsRaw ? parseHostList(hostsRaw.join(',')) : undefined,
       dryRun: argv.includes('--dry-run'),
       yes: argv.includes('--yes') || argv.includes('-y'),
     });
@@ -183,14 +183,21 @@ function printHelp(): void {
   );
 }
 
-function valueAfter(argv: string[], flag: string): string | undefined {
+function valuesAfter(argv: string[], flag: string): string[] | undefined {
   const index = argv.indexOf(flag);
   if (index < 0) return undefined;
-  const value = argv[index + 1];
-  if (!value || value.startsWith('-')) {
-    throw new Error(flag + ' requires a value');
+
+  const values: string[] = [];
+  for (let cursor = index + 1; cursor < argv.length; cursor += 1) {
+    const value = argv[cursor];
+    if (!value || value.startsWith('-')) break;
+    values.push(value);
   }
-  return value;
+
+  if (values.length === 0) {
+    throw new Error(flag + ' requires at least one value');
+  }
+  return values;
 }
 
 function label(provider: 'codex' | 'claude' | 'antigravity'): string {
