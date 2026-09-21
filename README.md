@@ -78,9 +78,24 @@ A valid installation can therefore be Codex + Antigravity only, Claude Code only
 
 ## Install and configure
 
-### Local checkout today
+### Recommended: npm
 
-Until the npm package is published, build and link the checkout once:
+Run setup directly without a permanent global install:
+
+```bash
+npx -y '@jiho.ko/agentmux@latest' setup
+```
+
+Or install the CLI globally:
+
+```bash
+npm install -g '@jiho.ko/agentmux'
+agentmux setup
+```
+
+The quotes around the scoped package are intentionally shown so the commands can be pasted unchanged into PowerShell as well as POSIX shells.
+
+### Local checkout for development
 
 ```bash
 git clone https://github.com/seaweedsoup98/agentmux.git
@@ -88,11 +103,6 @@ cd agentmux
 npm install
 npm run build
 npm link
-```
-
-Then configure only the agent UIs you want to use:
-
-```bash
 agentmux setup
 ```
 
@@ -146,14 +156,6 @@ Antigravity: run agy interactively once and complete sign-in
 
 Runtime failures that look like missing executables or authentication errors include the corresponding remediation hint.
 
-### After npm publication
-
-The intended one-line path is:
-
-```bash
-npx -y @jiho.ko/agentmux@latest setup
-```
-
 When setup is running from an npx cache, it registers `npx -y @jiho.ko/agentmux@latest` as the stable MCP launch command rather than pinning an ephemeral cache path.
 
 ## Native plugins
@@ -197,7 +199,7 @@ agy plugin install ./plugins/antigravity
 
 The plugin is then available across Antigravity surfaces that share the global plugin profile.
 
-All native plugin MCP definitions launch `npx -y @jiho.ko/agentmux@latest`; they are therefore publication-ready bundles and become the recommended install path after the npm package is published. For a development checkout before publication, use `agentmux setup` instead.
+All native plugin MCP definitions launch `npx -y @jiho.ko/agentmux@latest`, so published plugins resolve the same npm runtime. For a development checkout, use the local `agentmux setup` flow instead.
 
 ## Development
 
@@ -343,7 +345,7 @@ To keep the runtime small, agentmux intentionally does not add:
 - automatic worktree merging — the control tower explicitly inspects and applies isolated changes
 - provider-specific workflow abstractions in the core — provider adapters stop at execution/session/progress normalization
 
-Named roles remain lightweight session metadata instead of persistent templates. Package publication can be added independently of the runtime after the real-provider matrix is validated.
+Named roles remain lightweight session metadata instead of persistent templates.
 
 ## Real-provider validation
 

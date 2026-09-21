@@ -15,38 +15,19 @@ npm run release:check
 The release check also verifies that setup and native plugin bundles use the same
 published package name.
 
-## First publication
+## Initial publication
 
-npm trusted publishing cannot be configured for a package that does not exist yet.
-Therefore the first publication is an explicit maintainer action.
+Version 0.1.0 has been published as `@jiho.ko/agentmux`.
 
-1. Confirm the npm account is `jiho.ko`:
+PowerShell requires the scoped package argument to be quoted when typing commands
+directly:
 
-   ```bash
-   npm whoami
-   ```
+```powershell
+npm view '@jiho.ko/agentmux' version
+npx -y '@jiho.ko/agentmux@latest' --version
+```
 
-2. Run:
-
-   ```bash
-   npm run check
-   npm run release:check
-   npm pack --dry-run
-   ```
-
-3. Log in if needed:
-
-   ```bash
-   npm login
-   ```
-
-4. Publish version 0.1.0:
-
-   ```bash
-   npm publish
-   ```
-
-`publishConfig.access=public` is already set for the scoped public package.
+POSIX shells also accept the same quoted form, so documentation should prefer it.
 
 ## Configure trusted publishing after the first release
 
@@ -70,5 +51,5 @@ Use `dry_run=true` first. Set it to false only for an intended release.
 3. Run real-provider E2E for the installed provider set.
 4. Run the publish workflow with `dry_run=true`.
 5. Publish.
-6. Verify a clean-machine install using the exact npm package name.
+6. Verify a clean-machine install using the exact npm package name (quote scoped names in PowerShell).
 7. Create the matching GitHub tag/release.
