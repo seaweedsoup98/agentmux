@@ -86,15 +86,30 @@ export async function runCli(argv: string[]): Promise<number> {
 
   if (command === 'plugins') {
     const root = fileURLToPath(new URL('../', import.meta.url));
-    const rows = [
-      ['Codex / OpenAI', join(root, 'plugins', 'codex')],
-      ['Claude Code', join(root, 'plugins', 'claude')],
-      ['Antigravity', join(root, 'plugins', 'antigravity')],
-    ];
+    const codexPath = join(root, 'plugins', 'codex');
+    const claudePath = join(root, 'plugins', 'claude');
+    const antigravityPath = join(root, 'plugins', 'antigravity');
+
     process.stdout.write(
-      'Native plugin bundles\n\n' +
-        rows.map(([name, path]) => name + ': ' + path).join('\n') +
-        '\n\nThese bundles use npx -y agentmux@latest and are intended for the published npm package.\n',
+      [
+        'Native plugin bundles',
+        '',
+        'Codex / OpenAI: ' + codexPath,
+        '  codex plugin marketplace add seaweedsoup98/agentmux --ref main',
+        '  Then install agentmux from /plugins.',
+        '',
+        'Claude Code: ' + claudePath,
+        '  claude plugin marketplace add seaweedsoup98/agentmux',
+        '  claude plugin install agentmux@agentmux --scope user',
+        '',
+        'Antigravity: ' + antigravityPath,
+        '  agy plugin install ' + JSON.stringify(antigravityPath),
+        '',
+        'Plugin MCP bundles launch: npx -y agentmux@latest',
+        'Use direct "agentmux setup" for local development before npm publication.',
+        'Do not enable a native plugin and direct MCP registration for the same host unless duplicate tools are intentional.',
+        '',
+      ].join('\n'),
     );
     return 0;
   }
