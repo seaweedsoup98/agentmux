@@ -9,6 +9,8 @@ import { writeFakeCommand } from './helpers.js';
 
 test('host list accepts provider aliases without requiring every provider', () => {
   assert.deepEqual(parseHostList('codex,agy'), ['codex', 'antigravity']);
+  assert.deepEqual(parseHostList('codex antigravity'), ['codex', 'antigravity']);
+  assert.deepEqual(parseHostList('codex;antigravity'), ['codex', 'antigravity']);
   assert.deepEqual(parseHostList('claude-code,codex,claude'), ['claude', 'codex']);
   assert.throws(() => parseHostList('codex,unknown'), /Unknown hosts/);
 });
