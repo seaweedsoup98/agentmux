@@ -5,7 +5,14 @@ import { appendEvent } from './events.js';
 import { LocalExecutionController } from './execution.js';
 import { listProviders } from './providers.js';
 import { StateStore } from './state.js';
-import { chooseWorkspace, createWorktree } from './workspace.js';
+import {
+  applyWorktree,
+  chooseWorkspace,
+  cleanupWorktree,
+  createWorktree,
+  diffWorktree,
+  inspectWorktree,
+} from './workspace.js';
 import type {
   AccessMode,
   AgentDelegation,
@@ -260,12 +267,14 @@ export class AgentManager {
       let cwd = baseCwd;
       let worktreePath: string | undefined;
       let gitRoot: string | undefined;
+      let worktreeBaseCommit: string | undefined;
 
       if (workspace === 'worktree') {
         const worktree = await createWorktree(agentId, baseCwd);
         cwd = worktree.cwd;
         worktreePath = worktree.worktreePath;
         gitRoot = worktree.gitRoot;
+        worktreeBaseCommit = worktree.baseCommit;
       }
 
       if (parent) {
@@ -300,6 +309,7 @@ export class AgentManager {
         workspace,
         worktreePath,
         gitRoot,
+        worktreeBaseCommit,
         teamId,
         parentAgentId: parent?.id,
         status: 'running',
@@ -814,6 +824,104 @@ export class AgentManager {
     return delegation;
   }
 
+  async workspaceStatus(agentId: string) {
+    const state = await this.store.load();
+    const agent = this.requireAgent(state, agentId);
+    this.assertCallerCanAccessAgent(state, agent);
+    const workspace = this.requireWorktree(agent);
+    return inspectWorktree(
+      workspace.worktreePath,
+      workspace.gitRoot,
+      workspace.baseCommit,
+    );
+  }
+
+  async workspaceDiff(agentId: string) {
+    const state = await this.store.load();
+    const agent = this.requireAgent(state, agentId);
+    this.assertCallerCanAccessAgent(state, agent);
+    const workspace = this.requireWorktree(agent);
+    return diffWorktree(
+      workspace.worktreePath,
+      workspace.gitRoot,
+      workspace.baseCommit,
+    );
+  }
+
+  async workspaceApply(agentId: string) {
+    if (this.callerAgentId) {
+      throw new Error('Only an external control tower can apply isolated work');
+    }
+
+    const state = await this.store.load();
+    const agent = this.requireAgent(state, agentId);
+    if (agent.status === 'running') {
+      throw new Error('Cannot apply work while the agent is still running');
+    }
+    const workspace = this.requireWorktree(agent);
+    const result = await applyWorktree(
+      workspace.worktreePath,
+      workspace.gitRoot,
+      workspace.baseCommit,
+    );
+
+    if (result.applied) {
+      const now = new Date().toISOString();
+      await this.store.transaction((fresh) => {
+        const target = this.requireAgent(fresh, agentId);
+        if (target.status === 'running') {
+          throw new Error('Agent started running while workspace apply was in progress');
+        }
+        target.worktreeAppliedAt = now;
+        target.updatedAt = now;
+        appendEvent(fresh, {
+          type: 'workspace.applied',
+          createdAt: now,
+          teamId: target.teamId,
+          agentId: target.id,
+          detail: {
+            patchBytes: result.patchBytes,
+            baseCommit: workspace.baseCommit,
+          },
+        });
+      });
+    }
+    return result;
+  }
+
+  async workspaceCleanup(agentId: string, force = false) {
+    if (this.callerAgentId) {
+      throw new Error('Only an external control tower can clean isolated worktrees');
+    }
+
+    const state = await this.store.load();
+    const agent = this.requireAgent(state, agentId);
+    if (agent.status !== 'stopped') {
+      throw new Error('Stop the agent before cleaning its isolated worktree');
+    }
+    const workspace = this.requireWorktree(agent);
+    const result = await cleanupWorktree(
+      workspace.worktreePath,
+      workspace.gitRoot,
+      force,
+    );
+
+    const now = new Date().toISOString();
+    await this.store.transaction((fresh) => {
+      const target = this.requireAgent(fresh, agentId);
+      target.worktreeCleanedAt = now;
+      target.updatedAt = now;
+      appendEvent(fresh, {
+        type: 'workspace.cleaned',
+        createdAt: now,
+        teamId: target.teamId,
+        agentId: target.id,
+        detail: { forced: force, removed: result.removed },
+      });
+    });
+    return result;
+  }
+
   async events(options: EventsOptions = {}): Promise<AgentEvent[]> {
     const state = await this.store.load();
     return this.selectEvents(state, options).map((event) => structuredClone(event));
@@ -1172,6 +1280,26 @@ export class AgentManager {
     const team = state.teams[teamId];
     if (!team) throw new Error('Unknown team: ' + teamId);
     return team;
+  }
+
+  private requireWorktree(agent: AgentSession): {
+    worktreePath: string;
+    gitRoot: string;
+    baseCommit: string;
+  } {
+    if (
+      agent.workspace !== 'worktree' ||
+      !agent.worktreePath ||
+      !agent.gitRoot ||
+      !agent.worktreeBaseCommit
+    ) {
+      throw new Error('Agent does not have an isolated worktree');
+    }
+    return {
+      worktreePath: agent.worktreePath,
+      gitRoot: agent.gitRoot,
+      baseCommit: agent.worktreeBaseCommit,
+    };
   }
 
   private requireDelegation(
