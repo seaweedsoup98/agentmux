@@ -7,6 +7,8 @@ import { StateStore } from './state.js';
 import { chooseWorkspace, createWorktree } from './workspace.js';
 import type {
   AccessMode,
+  AgentEvent,
+  AgentEventType,
   AgentJob,
   AgentMessage,
   AgentSession,
@@ -40,6 +42,14 @@ export interface InboxOptions {
   agentId?: string;
   unreadOnly?: boolean;
   markRead?: boolean;
+}
+
+export interface EventsOptions {
+  afterSeq?: number;
+  teamId?: string;
+  agentId?: string;
+  types?: AgentEventType[];
+  limit?: number;
 }
 
 type SpawnManyResult =
@@ -158,6 +168,15 @@ export class AgentManager {
         supervisor.teamId = team.id;
         supervisor.updatedAt = now;
       }
+
+      this.appendEvent(state, {
+        type: 'team.created',
+        createdAt: now,
+        teamId: team.id,
+        agentId: supervisor?.id,
+        actorAgentId: this.callerAgentId,
+        detail: team.name ? { name: team.name } : undefined,
+      });
 
       return structuredClone(team);
     });
@@ -289,6 +308,28 @@ export class AgentManager {
       agent.latestJobId = job.id;
       state.agents[agent.id] = agent;
       state.jobs[job.id] = job;
+      this.appendEvent(state, {
+        type: 'agent.spawned',
+        createdAt: now,
+        teamId: agent.teamId,
+        agentId: agent.id,
+        actorAgentId: this.callerAgentId,
+        detail: {
+          provider: agent.provider,
+          access: agent.access,
+          workspace: agent.workspace ?? 'shared',
+          ...(agent.role ? { role: agent.role } : {}),
+        },
+      });
+      this.appendEvent(state, {
+        type: 'job.created',
+        createdAt: now,
+        teamId: agent.teamId,
+        agentId: agent.id,
+        actorAgentId: this.callerAgentId,
+        jobId: job.id,
+        detail: { firstRun: true },
+      });
 
       return {
         agent: structuredClone(agent),
@@ -349,6 +390,15 @@ export class AgentManager {
       agent.updatedAt = now;
       agent.error = undefined;
       state.jobs[nextJob.id] = nextJob;
+      this.appendEvent(state, {
+        type: 'job.created',
+        createdAt: now,
+        teamId: agent.teamId,
+        agentId: agent.id,
+        actorAgentId: this.callerAgentId,
+        jobId: nextJob.id,
+        detail: { firstRun: false },
+      });
 
       return structuredClone(nextJob);
     });
@@ -380,6 +430,15 @@ export class AgentManager {
         createdAt: now,
       };
       state.messages[next.id] = next;
+      this.appendEvent(state, {
+        type: 'message.sent',
+        createdAt: now,
+        teamId: next.teamId,
+        agentId: target.id,
+        actorAgentId: caller?.id,
+        messageId: next.id,
+        detail: { wakeRequested: wake },
+      });
       return structuredClone(next);
     });
 
@@ -403,14 +462,34 @@ export class AgentManager {
         stored.wokenAt = now;
         stored.wakeJobId = wakeJob.id;
         stored.readAt ??= now;
+        this.appendEvent(state, {
+          type: 'message.woken',
+          createdAt: now,
+          teamId: stored.teamId,
+          agentId: stored.toAgentId,
+          actorAgentId: stored.fromAgentId,
+          jobId: wakeJob.id,
+          messageId: stored.id,
+        });
         return structuredClone(stored);
       });
       return { message, wakeJob };
     } catch (error) {
-      return {
-        message,
-        wakeError: error instanceof Error ? error.message : String(error),
-      };
+      const wakeError = error instanceof Error ? error.message : String(error);
+      await this.store.transaction((state) => {
+        const stored = state.messages[message.id];
+        if (!stored) return;
+        this.appendEvent(state, {
+          type: 'message.wake_failed',
+          createdAt: new Date().toISOString(),
+          teamId: stored.teamId,
+          agentId: stored.toAgentId,
+          actorAgentId: stored.fromAgentId,
+          messageId: stored.id,
+          detail: { error: wakeError.slice(0, 2048) },
+        });
+      });
+      return { message, wakeError };
     }
   }
 
@@ -424,7 +503,18 @@ export class AgentManager {
         const messages = this.selectInbox(state, target.id, unreadOnly);
         const now = new Date().toISOString();
         for (const message of messages) {
-          state.messages[message.id].readAt ??= now;
+          const stored = state.messages[message.id];
+          if (!stored.readAt) {
+            stored.readAt = now;
+            this.appendEvent(state, {
+              type: 'message.read',
+              createdAt: now,
+              teamId: stored.teamId,
+              agentId: stored.toAgentId,
+              actorAgentId: this.callerAgentId,
+              messageId: stored.id,
+            });
+          }
         }
         return messages.map((message) =>
           structuredClone(state.messages[message.id]),
@@ -449,11 +539,56 @@ export class AgentManager {
         if (caller && message.toAgentId !== caller.id) {
           throw new Error('Managed agents can only acknowledge their own inbox');
         }
-        message.readAt ??= now;
+        if (!message.readAt) {
+          message.readAt = now;
+          this.appendEvent(state, {
+            type: 'message.read',
+            createdAt: now,
+            teamId: message.teamId,
+            agentId: message.toAgentId,
+            actorAgentId: this.callerAgentId,
+            messageId: message.id,
+          });
+        }
         return structuredClone(message);
       });
       return messages;
     });
+  }
+
+  async events(options: EventsOptions = {}): Promise<AgentEvent[]> {
+    const state = await this.store.load();
+    return this.selectEvents(state, options).map((event) => structuredClone(event));
+  }
+
+  async waitEvents(
+    options: EventsOptions = {},
+    timeoutMs = 30_000,
+  ): Promise<{ events: AgentEvent[]; timedOut: boolean; latestSeq: number }> {
+    const timeout = Math.max(0, Math.min(timeoutMs, 60_000));
+    const deadline = Date.now() + timeout;
+
+    while (true) {
+      const state = await this.store.load();
+      const events = this.selectEvents(state, options);
+      if (events.length > 0) {
+        return {
+          events: events.map((event) => structuredClone(event)),
+          timedOut: false,
+          latestSeq: state.nextEventSeq - 1,
+        };
+      }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        return {
+          events: [],
+          timedOut: true,
+          latestSeq: state.nextEventSeq - 1,
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
+    }
   }
 
   async status(
@@ -565,12 +700,28 @@ export class AgentManager {
           job.status = 'canceled';
           job.finishedAt = now;
           job.error = 'Canceled by agentmux';
+          this.appendEvent(state, {
+            type: 'job.canceled',
+            createdAt: now,
+            teamId: target.teamId,
+            agentId: target.id,
+            actorAgentId: this.callerAgentId,
+            jobId: job.id,
+            detail: { reason: 'kill' },
+          });
         }
       }
 
       target.status = 'stopped';
       target.activeJobId = undefined;
       target.updatedAt = now;
+      this.appendEvent(state, {
+        type: 'agent.stopped',
+        createdAt: now,
+        teamId: target.teamId,
+        agentId: target.id,
+        actorAgentId: this.callerAgentId,
+      });
 
       return {
         agent: structuredClone(target),
@@ -595,6 +746,13 @@ export class AgentManager {
       if (job.ownerInstanceId !== this.instanceId) return undefined;
 
       job.startedAt = new Date().toISOString();
+      this.appendEvent(state, {
+        type: 'job.started',
+        createdAt: job.startedAt,
+        teamId: agent.teamId,
+        agentId: agent.id,
+        jobId: job.id,
+      });
       return structuredClone(agent);
     });
     if (!prepared) return;
@@ -662,6 +820,16 @@ export class AgentManager {
         agent.activeJobId = undefined;
         agent.updatedAt = job.finishedAt;
         agent.error = job.error;
+        this.appendEvent(state, {
+          type: ok ? 'job.succeeded' : 'job.failed',
+          createdAt: job.finishedAt,
+          teamId: agent.teamId,
+          agentId: agent.id,
+          jobId: job.id,
+          detail: ok
+            ? { exitCode: processResult.exitCode ?? 0 }
+            : { error: (job.error ?? 'unknown').slice(0, 2048) },
+        });
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -680,6 +848,14 @@ export class AgentManager {
         agent.activeJobId = undefined;
         agent.updatedAt = job.finishedAt;
         agent.error = message;
+        this.appendEvent(state, {
+          type: 'job.failed',
+          createdAt: job.finishedAt,
+          teamId: agent.teamId,
+          agentId: agent.id,
+          jobId: job.id,
+          detail: { error: message.slice(0, 2048) },
+        });
       });
     } finally {
       clearInterval(cancelMonitor);
@@ -816,6 +992,50 @@ export class AgentManager {
     }
     if (agent.role) env.AGENTMUX_ROLE = agent.role;
     return env;
+  }
+
+  private selectEvents(
+    state: AgentmuxState,
+    options: EventsOptions,
+  ): AgentEvent[] {
+    const caller = this.caller(state);
+    const afterSeq = Math.max(0, options.afterSeq ?? 0);
+    const limit = Math.max(1, Math.min(options.limit ?? 100, 500));
+
+    if (caller && options.teamId && options.teamId !== caller.teamId) {
+      throw new Error('Managed agents can only read events from their own team');
+    }
+    if (caller && options.agentId) {
+      const target = this.requireAgent(state, options.agentId);
+      this.assertCallerCanAccessAgent(state, target);
+    }
+
+    const types = options.types ? new Set(options.types) : undefined;
+    return state.events
+      .filter((event) => event.seq > afterSeq)
+      .filter((event) => !options.teamId || event.teamId === options.teamId)
+      .filter((event) => !options.agentId || event.agentId === options.agentId)
+      .filter((event) => !types || types.has(event.type))
+      .filter((event) => {
+        if (!caller) return true;
+        if (event.agentId === caller.id || event.actorAgentId === caller.id) return true;
+        return Boolean(caller.teamId && event.teamId === caller.teamId);
+      })
+      .slice(0, limit);
+  }
+
+  private appendEvent(
+    state: AgentmuxState,
+    input: Omit<AgentEvent, 'id' | 'seq'>,
+  ): AgentEvent {
+    const seq = state.nextEventSeq++;
+    const event: AgentEvent = {
+      id: 'evt_' + seq.toString(36).padStart(8, '0'),
+      seq,
+      ...input,
+    };
+    state.events.push(event);
+    return event;
   }
 
   private newJob(agentId: string, now: string): AgentJob {
