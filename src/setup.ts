@@ -19,6 +19,7 @@ export interface SetupOptions {
   dryRun?: boolean;
   yes?: boolean;
   runtime?: RuntimeSpec;
+  homeDir?: string;
 }
 
 export interface SetupAction {
@@ -57,7 +58,12 @@ export async function runSetup(options: SetupOptions = {}): Promise<SetupResult>
     }
 
     try {
-      const action = await configureHost(host, runtime, Boolean(options.dryRun));
+      const action = await configureHost(
+        host,
+        runtime,
+        Boolean(options.dryRun),
+        options.homeDir ?? homedir(),
+      );
       actions.push(action);
     } catch (error) {
       actions.push({
@@ -150,6 +156,7 @@ async function configureHost(
   host: ProviderName,
   runtime: RuntimeSpec,
   dryRun: boolean,
+  homeDir: string,
 ): Promise<SetupAction> {
   if (host === 'codex') {
     const rendered = ['codex', 'mcp', 'add', 'agentmux', '--', runtime.command, ...runtime.args];
@@ -226,7 +233,7 @@ async function configureHost(
     };
   }
 
-  const configPath = join(homedir(), '.gemini', 'config', 'mcp_config.json');
+  const configPath = join(homeDir, '.gemini', 'config', 'mcp_config.json');
   const server = {
     command: runtime.command,
     args: runtime.args,
@@ -276,10 +283,16 @@ async function mergeJsonMcpConfig(
     }
   }
 
-  const existing =
-    value.mcpServers && typeof value.mcpServers === 'object' && !Array.isArray(value.mcpServers)
-      ? (value.mcpServers as Record<string, unknown>)
-      : {};
+  if (
+    value.mcpServers !== undefined &&
+    (!value.mcpServers ||
+      typeof value.mcpServers !== 'object' ||
+      Array.isArray(value.mcpServers))
+  ) {
+    throw new Error('Existing mcpServers value is not a JSON object');
+  }
+
+  const existing = (value.mcpServers as Record<string, unknown> | undefined) ?? {};
 
   value.mcpServers = {
     ...existing,
