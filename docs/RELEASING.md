@@ -71,8 +71,10 @@ On a release branch:
 npm version patch --no-git-tag-version
 ```
 
-(or use `minor` / `major`), then add the matching changelog section, run
-`npm run check`, and merge the change into `main`.
+(or use `minor` / `major`). The npm `version` lifecycle automatically syncs
+the Codex/Claude plugin manifests and Claude marketplace entry to the same version.
+Then add the matching changelog section, run `npm run check`, and merge the
+change into `main`.
 
 After the merge:
 
