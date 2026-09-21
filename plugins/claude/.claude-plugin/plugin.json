@@ -1,0 +1,6 @@
+{
+  "name": "agentmux",
+  "version": "0.1.0",
+  "description": "Cross-provider coding-agent orchestration for Claude Code.",
+  "mcpServers": "./.mcp.json"
+}

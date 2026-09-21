@@ -16,6 +16,8 @@ interface CaseResult {
 interface ProviderReport {
   provider: ProviderName;
   available: boolean;
+  state: string;
+  auth: string;
   version?: string;
   error?: string;
 }
@@ -36,15 +38,23 @@ const health = await doctorProviders();
 const providers: ProviderReport[] = health.map((item) => ({
   provider: item.provider,
   available: item.available,
+  state: item.state,
+  auth: item.auth,
   version: item.version,
   error: item.error,
 }));
 
 const selected = explicitProviders ??
-  health.filter((item) => item.available).map((item) => item.provider);
+  health
+    .filter((item) => item.installed && item.state !== 'auth_required')
+    .map((item) => item.provider);
 
 const unavailableSelected = selected.filter(
-  (provider) => !health.find((item) => item.provider === provider)?.available,
+  (provider) => !health.find((item) => item.provider === provider)?.installed,
+);
+const authRequiredSelected = selected.filter(
+  (provider) =>
+    health.find((item) => item.provider === provider)?.state === 'auth_required',
 );
 
 const root = await mkdtemp(join(tmpdir(), 'agentmux-real-e2e-'));
@@ -68,8 +78,25 @@ try {
     });
   }
 
+  for (const provider of authRequiredSelected) {
+    const item = health.find((entry) => entry.provider === provider);
+    cases.push({
+      name: provider + ':auth',
+      ok: false,
+      durationMs: 0,
+      detail:
+        'Provider authentication is required. ' +
+        (item?.loginHint ? 'Run: ' + item.loginHint : ''),
+    });
+  }
+
   for (const provider of selected) {
-    if (unavailableSelected.includes(provider)) continue;
+    if (
+      unavailableSelected.includes(provider) ||
+      authRequiredSelected.includes(provider)
+    ) {
+      continue;
+    }
     await runCase(provider + ':spawn-resume', async () => {
       await pace();
       const spawned = await external.spawn({
@@ -96,11 +123,15 @@ try {
 
   if (matrix) {
     for (const parentProvider of selected) {
-      if (unavailableSelected.includes(parentProvider)) continue;
+      if (
+        unavailableSelected.includes(parentProvider) ||
+        authRequiredSelected.includes(parentProvider)
+      ) continue;
       for (const childProvider of selected) {
         if (
           parentProvider === childProvider ||
-          unavailableSelected.includes(childProvider)
+          unavailableSelected.includes(childProvider) ||
+          authRequiredSelected.includes(childProvider)
         ) {
           continue;
         }

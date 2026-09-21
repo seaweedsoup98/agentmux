@@ -1,0 +1,7 @@
+{
+  "name": "agentmux",
+  "version": "0.1.0",
+  "description": "Cross-provider coding-agent orchestration for Codex.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

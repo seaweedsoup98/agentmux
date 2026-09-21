@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { doctorProviders } from './doctor.js';
+import { doctorHosts, doctorProviders } from './doctor.js';
 import { AgentManager } from './manager.js';
 import { ACCESS_MODES, DELEGATION_STATUSES, EVENT_TYPES, PROVIDERS, WORKSPACE_MODES } from './types.js';
 
@@ -27,7 +27,7 @@ export function buildServer(manager: AgentManager): McpServer {
         'Managed child agents should call whoami to discover their identity and team. Prefer message_send for attributed ' +
         'agent-to-agent communication; wake=true starts a new turn only when the recipient is idle and resumable. ' +
         'When a managed agent wakes a peer and needs that work to finish, it should wait for the returned wakeJob before ending its own turn. ' +
-        'Use inbox/message_ack for persisted messages. Use delegate/delegation_* when work ownership or completion must be tracked explicitly. Use events/events_wait to observe durable orchestration history across hosts. Prefer spawn_many for independent parallel tasks and wait instead ' +
+        'Use inbox/message_ack for persisted messages. Use doctor before assuming every worker provider is installed or authenticated. Use delegate/delegation_* when work ownership or completion must be tracked explicitly. Use events/events_wait to observe durable orchestration history across hosts. Prefer spawn_many for independent parallel tasks and wait instead ' +
         'of tight result polling. Use read-only access for analysis/review unless edits are needed. Keep workspace=auto ' +
         'unless explicit isolation is required. Do not use full access unless the task requires it.',
     },
@@ -580,10 +580,16 @@ export function buildServer(manager: AgentManager): McpServer {
     'doctor',
     {
       description:
-        'Check whether each supported provider CLI is installed and report its version.',
+        'Check provider install/auth health and whether agentmux is configured in installed MCP hosts.',
       inputSchema: z.object({}),
     },
-    async () => text(await doctorProviders()),
+    async () => {
+      const providers = await doctorProviders();
+      return text({
+        providers,
+        hosts: await doctorHosts(providers),
+      });
+    },
   );
 
   return server;

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "agentmux": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "agentmux@latest"
+      ]
+    }
+  }
+}
