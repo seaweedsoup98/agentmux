@@ -5,7 +5,8 @@ import { delimiter, join } from 'node:path';
 import test from 'node:test';
 import { BrokerExecutionController } from '../src/broker-client.js';
 import { AgentManager } from '../src/manager.js';
-import { StateStore } from '../src/state.js';\nimport { writeFakeCommand } from './helpers.js';
+import { StateStore } from '../src/state.js';
+import { writeFakeCommand } from './helpers.js';
 
 async function waitStored(
   store: StateStore,
