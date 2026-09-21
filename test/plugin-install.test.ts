@@ -79,6 +79,7 @@ if (args[0] === '--version') {
 if (args[0] === 'plugin' && args[1] === 'list') process.exit(0);
 fs.appendFileSync(${logLiteral}, 'agy ' + JSON.stringify(args) + '\\n');
 if (args[0] === 'plugin' && args[1] === 'install') process.exit(0);
+if (args[0] === 'plugin' && args[1] === 'enable') process.exit(0);
 process.exit(2);
 `);
 
@@ -115,6 +116,7 @@ process.exit(2);
     assert.match(log, /claude \["mcp","remove","agentmux","--scope","user"\]/);
 
     assert.match(log, /agy \["plugin","install",/);
+    assert.match(log, /agy \["plugin","enable","agentmux"\]/);
 
     const config = JSON.parse(await readFile(agyConfigPath, 'utf8')) as {
       keepMe: boolean;
