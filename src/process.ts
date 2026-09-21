@@ -65,4 +65,10 @@ export class ProcessRunner {
     if (!child) return false;
     return child.kill();
   }
+
+  cancelAll(): void {
+    for (const child of this.active.values()) {
+      child.kill();
+    }
+  }
 }
