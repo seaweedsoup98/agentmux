@@ -118,8 +118,13 @@ export class StateStore {
         if (code !== 'EEXIST') throw error;
 
         try {
+          const owner = await this.readLockOwner();
           const lockStat = await stat(this.lockPath);
-          if (Date.now() - lockStat.mtimeMs > LOCK_STALE_MS) {
+          const ownerDead =
+            owner?.pid !== undefined && !isProcessAlive(owner.pid);
+          const stale = Date.now() - lockStat.mtimeMs > LOCK_STALE_MS;
+
+          if (ownerDead || stale) {
             await rm(this.lockPath, { recursive: true, force: true });
             continue;
           }
@@ -135,5 +140,26 @@ export class StateStore {
         await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
       }
     }
+  }
+
+  private async readLockOwner(): Promise<{ pid?: number } | undefined> {
+    try {
+      return JSON.parse(
+        await readFile(join(this.lockPath, 'owner.json'), 'utf8'),
+      ) as { pid?: number };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      return undefined;
+    }
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
   }
 }
