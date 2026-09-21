@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import test from 'node:test';
 import { doctorProviders } from '../src/doctor.js';
 import { parseHostList, runSetup } from '../src/setup.js';
@@ -41,7 +41,7 @@ process.exit(2);
 `);
 
   const previousPath = process.env.PATH;
-  process.env.PATH = bin + delimiter + (previousPath ?? '');
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
   try {
     const health = await doctorProviders();
     const codex = health.find((item) => item.provider === 'codex');
@@ -77,7 +77,7 @@ process.exit(2);
 `);
 
   const previousPath = process.env.PATH;
-  process.env.PATH = bin + delimiter + (previousPath ?? '');
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
   try {
     const health = await doctorProviders();
     const claude = health.find((item) => item.provider === 'claude');
@@ -134,7 +134,7 @@ process.exit(2);
 `);
 
   const previousPath = process.env.PATH;
-  process.env.PATH = bin + delimiter + (previousPath ?? '');
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
 
   try {
     const runtime = {
@@ -199,7 +199,7 @@ process.exit(2);
 `);
 
   const previousPath = process.env.PATH;
-  process.env.PATH = bin + delimiter + (previousPath ?? '');
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
   try {
     const result = await runSetup({
       hosts: ['antigravity'],
