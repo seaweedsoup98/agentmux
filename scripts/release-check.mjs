@@ -35,7 +35,7 @@ if (pkg.bin?.agentmux !== 'dist/index.js') {
   errors.push('bin.agentmux must point to dist/index.js.');
 }
 
-for (const required of ['dist', 'plugins', '.agents', '.claude-plugin', 'README.md', 'LICENSE']) {
+for (const required of ['dist', 'plugins', '.agents', '.claude-plugin', 'README.md', 'CHANGELOG.md', 'LICENSE']) {
   if (!pkg.files?.includes(required)) {
     errors.push('package files[] is missing ' + JSON.stringify(required) + '.');
   }
