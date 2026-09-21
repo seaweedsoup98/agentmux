@@ -183,13 +183,12 @@ async function configureHost(
       };
     }
 
-    await runCommand('codex', ['mcp', 'remove', 'agentmux'], { timeoutMs: 10_000 });
-    const result = await runCommand(
+    await upsertCliMcp(
       'codex',
       ['mcp', 'add', 'agentmux', '--', runtime.command, ...runtime.args],
-      { timeoutMs: 15_000 },
+      ['mcp', 'remove', 'agentmux'],
+      'codex mcp add',
     );
-    assertSuccess(result, 'codex mcp add');
     return {
       host,
       status: 'configured',
@@ -219,12 +218,7 @@ async function configureHost(
       };
     }
 
-    await runCommand(
-      'claude',
-      ['mcp', 'remove', 'agentmux', '--scope', 'user'],
-      { timeoutMs: 10_000 },
-    );
-    const result = await runCommand(
+    await upsertCliMcp(
       'claude',
       [
         'mcp',
@@ -236,9 +230,9 @@ async function configureHost(
         runtime.command,
         ...runtime.args,
       ],
-      { timeoutMs: 15_000 },
+      ['mcp', 'remove', 'agentmux', '--scope', 'user'],
+      'claude mcp add',
     );
-    assertSuccess(result, 'claude mcp add');
     return {
       host,
       status: 'configured',
@@ -338,6 +332,44 @@ async function replaceFile(source: string, destination: string): Promise<void> {
       );
     }
   }
+}
+
+async function upsertCliMcp(
+  command: string,
+  addArgs: string[],
+  removeArgs: string[],
+  label: string,
+): Promise<void> {
+  const first = await runCommand(command, addArgs, { timeoutMs: 15_000 });
+  if (first.exitCode === 0) return;
+
+  const output = [
+    first.error,
+    first.stderr,
+    first.stdout,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  if (!/already exists|already configured|duplicate|name.*exists/i.test(output)) {
+    assertSuccess(first, label);
+    return;
+  }
+
+  const removed = await runCommand(command, removeArgs, { timeoutMs: 10_000 });
+  if (removed.exitCode !== 0) {
+    throw new Error(
+      label +
+        ' found an existing entry but could not remove it safely: ' +
+        (removed.error ||
+          removed.stderr ||
+          removed.stdout ||
+          'exit code ' + removed.exitCode),
+    );
+  }
+
+  const retry = await runCommand(command, addArgs, { timeoutMs: 15_000 });
+  assertSuccess(retry, label);
 }
 
 function assertSuccess(
