@@ -41,7 +41,8 @@ export async function runSetup(options: SetupOptions = {}): Promise<SetupResult>
   const installed = providers.filter((item) => item.installed).map((item) => item.provider);
   const selectedHosts = options.hosts ?? await selectHosts(installed, Boolean(options.yes));
   const runtime = options.runtime ?? await resolveRuntimeSpec();
-  const hostHealth = await doctorHosts(providers);
+  const homeDir = options.homeDir ?? homedir();
+  const hostHealth = await doctorHosts(providers, homeDir);
   const actions: SetupAction[] = [];
 
   for (const host of selectedHosts) {
@@ -75,7 +76,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<SetupResult>
         host,
         runtime,
         Boolean(options.dryRun),
-        options.homeDir ?? homedir(),
+        homeDir,
       );
       actions.push(action);
     } catch (error) {
