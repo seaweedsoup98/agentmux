@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { ProcessRunner } from './process.js';
-import { getProvider, listProviders } from './providers.js';
+import { appendEvent } from './events.js';
+import { LocalExecutionController } from './execution.js';
+import { listProviders } from './providers.js';
 import { StateStore } from './state.js';
 import { chooseWorkspace, createWorktree } from './workspace.js';
 import type {
@@ -15,8 +16,8 @@ import type {
   AgentSession,
   AgentTeam,
   AgentmuxState,
+  ExecutionController,
   ProviderName,
-  RunRequest,
   WorkspaceMode,
 } from './types.js';
 
@@ -67,16 +68,16 @@ type SpawnManyResult =
 export class AgentManager {
   private constructor(
     private readonly store: StateStore,
-    private readonly runner: ProcessRunner,
-    private readonly instanceId: string,
+    private readonly execution: ExecutionController,
     private readonly callerAgentId?: string,
   ) {}
 
   static async create(
     store = new StateStore(),
     callerAgentId = process.env.AGENTMUX_AGENT_ID || undefined,
+    execution?: ExecutionController,
   ): Promise<AgentManager> {
-    const instanceId = 'm_' + randomUUID().replaceAll('-', '').slice(0, 12);
+    const controller = execution ?? new LocalExecutionController(store);
     const now = new Date().toISOString();
 
     await store.transaction((state) => {
@@ -118,12 +119,7 @@ export class AgentManager {
       }
     });
 
-    return new AgentManager(
-      store,
-      new ProcessRunner(),
-      instanceId,
-      callerAgentId,
-    );
+    return new AgentManager(store, controller, callerAgentId);
   }
 
   providers() {
@@ -177,7 +173,7 @@ export class AgentManager {
         supervisor.updatedAt = now;
       }
 
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'team.created',
         createdAt: now,
         teamId: team.id,
@@ -316,7 +312,7 @@ export class AgentManager {
       agent.latestJobId = job.id;
       state.agents[agent.id] = agent;
       state.jobs[job.id] = job;
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'agent.spawned',
         createdAt: now,
         teamId: agent.teamId,
@@ -329,7 +325,7 @@ export class AgentManager {
           ...(agent.role ? { role: agent.role } : {}),
         },
       });
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'job.created',
         createdAt: now,
         teamId: agent.teamId,
@@ -345,7 +341,12 @@ export class AgentManager {
       };
     });
 
-    void this.execute(spawned.agent.id, spawned.job.id, options.prompt, true);
+    await this.dispatch({
+      agentId: spawned.agent.id,
+      jobId: spawned.job.id,
+      prompt: options.prompt,
+      firstRun: true,
+    });
     return spawned;
   }
 
@@ -377,9 +378,23 @@ export class AgentManager {
   }
 
   async send(agentId: string, prompt: string): Promise<AgentJob> {
+    return this.resumeAgent(agentId, prompt, false);
+  }
+
+  private async resumeAgent(
+    agentId: string,
+    prompt: string,
+    allowPeer: boolean,
+  ): Promise<AgentJob> {
     const job = await this.store.transaction((state) => {
       const agent = this.requireAgent(state, agentId);
+      const caller = this.caller(state);
       this.assertCallerCanAccessAgent(state, agent);
+      if (caller && caller.id !== agent.id && !allowPeer) {
+        throw new Error(
+          'Managed agents must use message_send or delegate for peer coordination',
+        );
+      }
 
       if (agent.status === 'running') {
         throw new Error('Agent already has a running job: ' + agent.activeJobId);
@@ -398,7 +413,7 @@ export class AgentManager {
       agent.updatedAt = now;
       agent.error = undefined;
       state.jobs[nextJob.id] = nextJob;
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'job.created',
         createdAt: now,
         teamId: agent.teamId,
@@ -411,7 +426,12 @@ export class AgentManager {
       return structuredClone(nextJob);
     });
 
-    void this.execute(agentId, job.id, prompt, false);
+    await this.dispatch({
+      agentId,
+      jobId: job.id,
+      prompt,
+      firstRun: false,
+    });
     return job;
   }
 
@@ -438,7 +458,7 @@ export class AgentManager {
         createdAt: now,
       };
       state.messages[next.id] = next;
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'message.sent',
         createdAt: now,
         teamId: next.teamId,
@@ -454,7 +474,7 @@ export class AgentManager {
 
     try {
       const sender = message.fromAgentId ?? 'external supervisor';
-      const wakeJob = await this.send(
+      const wakeJob = await this.resumeAgent(
         toAgentId,
         '[agentmux message ' +
           message.id +
@@ -462,6 +482,7 @@ export class AgentManager {
           sender +
           ']\n' +
           body,
+        true,
       );
       message = await this.store.transaction((state) => {
         const stored = state.messages[message.id];
@@ -470,7 +491,7 @@ export class AgentManager {
         stored.wokenAt = now;
         stored.wakeJobId = wakeJob.id;
         stored.readAt ??= now;
-        this.appendEvent(state, {
+        appendEvent(state, {
           type: 'message.woken',
           createdAt: now,
           teamId: stored.teamId,
@@ -487,7 +508,7 @@ export class AgentManager {
       await this.store.transaction((state) => {
         const stored = state.messages[message.id];
         if (!stored) return;
-        this.appendEvent(state, {
+        appendEvent(state, {
           type: 'message.wake_failed',
           createdAt: new Date().toISOString(),
           teamId: stored.teamId,
@@ -514,7 +535,7 @@ export class AgentManager {
           const stored = state.messages[message.id];
           if (!stored.readAt) {
             stored.readAt = now;
-            this.appendEvent(state, {
+            appendEvent(state, {
               type: 'message.read',
               createdAt: now,
               teamId: stored.teamId,
@@ -549,7 +570,7 @@ export class AgentManager {
         }
         if (!message.readAt) {
           message.readAt = now;
-          this.appendEvent(state, {
+          appendEvent(state, {
             type: 'message.read',
             createdAt: now,
             teamId: message.teamId,
@@ -590,7 +611,7 @@ export class AgentManager {
         updatedAt: now,
       };
       state.delegations[next.id] = next;
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'delegation.created',
         createdAt: now,
         teamId: next.teamId,
@@ -616,7 +637,7 @@ export class AgentManager {
         stored.status = 'active';
         stored.acceptedAt = new Date().toISOString();
         stored.updatedAt = stored.acceptedAt;
-        this.appendEvent(state, {
+        appendEvent(state, {
           type: 'delegation.accepted',
           createdAt: stored.acceptedAt,
           teamId: stored.teamId,
@@ -684,7 +705,7 @@ export class AgentManager {
       delegation.status = 'active';
       delegation.acceptedAt = now;
       delegation.updatedAt = now;
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'delegation.accepted',
         createdAt: now,
         teamId: delegation.teamId,
@@ -715,7 +736,7 @@ export class AgentManager {
       delegation.completedAt = now;
       delegation.updatedAt = now;
       delegation.summary = summary;
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'delegation.completed',
         createdAt: now,
         teamId: delegation.teamId,
@@ -763,7 +784,7 @@ export class AgentManager {
           ? undefined
           : wakeJob.error;
         jobId = wakeJob.id;
-        this.appendEvent(state, {
+        appendEvent(state, {
           type: 'job.canceled',
           createdAt: now,
           teamId: delegation.teamId,
@@ -777,7 +798,7 @@ export class AgentManager {
       delegation.status = 'canceled';
       delegation.canceledAt = now;
       delegation.updatedAt = now;
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'delegation.canceled',
         createdAt: now,
         teamId: delegation.teamId,
@@ -789,7 +810,7 @@ export class AgentManager {
       return { delegation: structuredClone(delegation), jobId };
     });
 
-    if (jobId) this.runner.cancel(jobId);
+    if (jobId) await this.execution.cancel(jobId);
     return delegation;
   }
 
@@ -883,32 +904,11 @@ export class AgentManager {
   }
 
   async shutdown(): Promise<void> {
-    this.runner.cancelAll();
-    const now = new Date().toISOString();
+    await this.execution.shutdown();
+  }
 
-    await this.store.transaction((state) => {
-      for (const job of Object.values(state.jobs)) {
-        if (
-          job.status !== 'running' ||
-          job.ownerInstanceId !== this.instanceId
-        ) {
-          continue;
-        }
-
-        job.status = 'canceled';
-        job.finishedAt = now;
-        job.error = 'Canceled because owning agentmux instance shut down';
-
-        const agent = state.agents[job.agentId];
-        if (!agent || agent.activeJobId !== job.id) continue;
-        agent.status = agent.nativeSessionId ? 'idle' : 'error';
-        agent.activeJobId = undefined;
-        agent.updatedAt = now;
-        agent.error = agent.nativeSessionId
-          ? undefined
-          : 'Initial run was interrupted before a native session ID was captured';
-      }
-    });
+  async runtimeStatus() {
+    return this.execution.status();
   }
 
   async list(): Promise<AgentSession[]> {
@@ -937,7 +937,7 @@ export class AgentManager {
           job.status = 'canceled';
           job.finishedAt = now;
           job.error = 'Canceled by agentmux';
-          this.appendEvent(state, {
+          appendEvent(state, {
             type: 'job.canceled',
             createdAt: now,
             teamId: target.teamId,
@@ -952,7 +952,7 @@ export class AgentManager {
       target.status = 'stopped';
       target.activeJobId = undefined;
       target.updatedAt = now;
-      this.appendEvent(state, {
+      appendEvent(state, {
         type: 'agent.stopped',
         createdAt: now,
         teamId: target.teamId,
@@ -968,135 +968,6 @@ export class AgentManager {
 
     if (jobId) this.runner.cancel(jobId);
     return agent;
-  }
-
-  private async execute(
-    agentId: string,
-    jobId: string,
-    prompt: string,
-    firstRun: boolean,
-  ): Promise<void> {
-    const prepared = await this.store.transaction((state) => {
-      const agent = state.agents[agentId];
-      const job = state.jobs[jobId];
-      if (!agent || !job || job.status !== 'running') return undefined;
-      if (job.ownerInstanceId !== this.instanceId) return undefined;
-
-      job.startedAt = new Date().toISOString();
-      this.appendEvent(state, {
-        type: 'job.started',
-        createdAt: job.startedAt,
-        teamId: agent.teamId,
-        agentId: agent.id,
-        jobId: job.id,
-      });
-      return structuredClone(agent);
-    });
-    if (!prepared) return;
-
-    let cancelCheckActive = false;
-    const cancelMonitor = setInterval(() => {
-      if (cancelCheckActive) return;
-      cancelCheckActive = true;
-      void this.store
-        .load()
-        .then((state) => {
-          const job = state.jobs[jobId];
-          const agent = state.agents[agentId];
-          if (job?.status === 'canceled' || agent?.status === 'stopped') {
-            this.runner.cancel(jobId);
-          }
-        })
-        .finally(() => {
-          cancelCheckActive = false;
-        });
-    }, 250);
-    cancelMonitor.unref();
-
-    try {
-      const provider = getProvider(prepared.provider);
-      const request: RunRequest = {
-        prompt,
-        cwd: prepared.cwd,
-        model: prepared.model,
-        effort: prepared.effort,
-        access: prepared.access,
-      };
-      const command = firstRun
-        ? provider.start(request)
-        : provider.resume(request, prepared.nativeSessionId as string);
-      command.env = this.agentEnvironment(prepared);
-
-      const processResult = await this.runner.run(jobId, command);
-      const parsed = provider.parse(processResult.stdout);
-
-      await this.store.transaction((state) => {
-        const agent = state.agents[agentId];
-        const job = state.jobs[jobId];
-        if (!agent || !job) return;
-        if (job.status === 'canceled' || agent.status === 'stopped') return;
-        if (job.ownerInstanceId !== this.instanceId) return;
-
-        if (parsed.nativeSessionId) {
-          agent.nativeSessionId = parsed.nativeSessionId;
-        }
-        const ok = processResult.exitCode === 0 && parsed.success;
-
-        job.exitCode = processResult.exitCode;
-        job.response = parsed.response;
-        job.stderr = this.tail(processResult.stderr, 8192);
-        job.finishedAt = new Date().toISOString();
-        job.status = ok ? 'succeeded' : 'failed';
-        job.error = ok
-          ? undefined
-          : parsed.error ??
-            this.tail(processResult.stderr, 2048) ??
-            'Provider exited without a successful terminal result';
-
-        agent.status = ok ? 'idle' : 'error';
-        agent.activeJobId = undefined;
-        agent.updatedAt = job.finishedAt;
-        agent.error = job.error;
-        this.appendEvent(state, {
-          type: ok ? 'job.succeeded' : 'job.failed',
-          createdAt: job.finishedAt,
-          teamId: agent.teamId,
-          agentId: agent.id,
-          jobId: job.id,
-          detail: ok
-            ? { exitCode: processResult.exitCode ?? 0 }
-            : { error: (job.error ?? 'unknown').slice(0, 2048) },
-        });
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await this.store.transaction((state) => {
-        const agent = state.agents[agentId];
-        const job = state.jobs[jobId];
-        if (!agent || !job) return;
-        if (job.status === 'canceled' || agent.status === 'stopped') return;
-        if (job.ownerInstanceId !== this.instanceId) return;
-
-        job.status = 'failed';
-        job.error = message;
-        job.finishedAt = new Date().toISOString();
-
-        agent.status = 'error';
-        agent.activeJobId = undefined;
-        agent.updatedAt = job.finishedAt;
-        agent.error = message;
-        this.appendEvent(state, {
-          type: 'job.failed',
-          createdAt: job.finishedAt,
-          teamId: agent.teamId,
-          agentId: agent.id,
-          jobId: job.id,
-          detail: { error: message.slice(0, 2048) },
-        });
-      });
-    } finally {
-      clearInterval(cancelMonitor);
-    }
   }
 
   private normalizeBatchWorkspaces(options: SpawnOptions[]): SpawnOptions[] {
@@ -1215,22 +1086,6 @@ export class AgentManager {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  private agentEnvironment(agent: AgentSession): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    delete env.AGENTMUX_AGENT_ID;
-    delete env.AGENTMUX_TEAM_ID;
-    delete env.AGENTMUX_PARENT_AGENT_ID;
-    delete env.AGENTMUX_ROLE;
-
-    env.AGENTMUX_AGENT_ID = agent.id;
-    if (agent.teamId) env.AGENTMUX_TEAM_ID = agent.teamId;
-    if (agent.parentAgentId) {
-      env.AGENTMUX_PARENT_AGENT_ID = agent.parentAgentId;
-    }
-    if (agent.role) env.AGENTMUX_ROLE = agent.role;
-    return env;
-  }
-
   private selectEvents(
     state: AgentmuxState,
     options: EventsOptions,
@@ -1261,18 +1116,39 @@ export class AgentManager {
       .slice(0, limit);
   }
 
-  private appendEvent(
-    state: AgentmuxState,
-    input: Omit<AgentEvent, 'id' | 'seq'>,
-  ): AgentEvent {
-    const seq = state.nextEventSeq++;
-    const event: AgentEvent = {
-      id: 'evt_' + seq.toString(36).padStart(8, '0'),
-      seq,
-      ...input,
-    };
-    state.events.push(event);
-    return event;
+  private async dispatch(request: {
+    agentId: string;
+    jobId: string;
+    prompt: string;
+    firstRun: boolean;
+  }): Promise<void> {
+    try {
+      await this.execution.submit(request);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.store.transaction((state) => {
+        const job = state.jobs[request.jobId];
+        const agent = state.agents[request.agentId];
+        if (!job || !agent || job.status !== 'running') return;
+        const now = new Date().toISOString();
+        job.status = 'failed';
+        job.finishedAt = now;
+        job.error = 'Failed to dispatch provider job: ' + message;
+        agent.status = 'error';
+        agent.activeJobId = undefined;
+        agent.updatedAt = now;
+        agent.error = job.error;
+        appendEvent(state, {
+          type: 'job.failed',
+          createdAt: now,
+          teamId: agent.teamId,
+          agentId: agent.id,
+          jobId: job.id,
+          detail: { error: job.error.slice(0, 2048) },
+        });
+      });
+      throw error;
+    }
   }
 
   private newJob(agentId: string, now: string): AgentJob {
@@ -1281,8 +1157,8 @@ export class AgentManager {
       agentId,
       status: 'running',
       createdAt: now,
-      ownerPid: process.pid,
-      ownerInstanceId: this.instanceId,
+      ownerPid: this.execution.owner.pid,
+      ownerInstanceId: this.execution.owner.instanceId,
     };
   }
 
@@ -1311,10 +1187,6 @@ export class AgentManager {
     return prefix + '_' + randomUUID().replaceAll('-', '').slice(0, 12);
   }
 
-  private tail(value: string, max: number): string | undefined {
-    const trimmed = value.trim();
-    return trimmed ? trimmed.slice(-max) : undefined;
-  }
 }
 
 function isProcessAlive(pid: number): boolean {
