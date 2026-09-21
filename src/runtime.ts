@@ -34,6 +34,7 @@ export class JobRuntime {
 
       job.ownerPid = this.owner.pid;
       job.ownerInstanceId = this.owner.instanceId;
+      job.ownerMode = this.owner.mode;
       job.startedAt = new Date().toISOString();
       appendEvent(state, {
         type: 'job.started',
