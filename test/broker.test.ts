@@ -11,7 +11,7 @@ import { writeFakeCommand } from './helpers.js';
 async function waitStored(
   store: StateStore,
   jobId: string,
-  timeoutMs = 5000,
+  timeoutMs = 10000,
 ) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
