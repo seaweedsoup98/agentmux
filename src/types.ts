@@ -11,6 +11,23 @@ export type ResolvedWorkspaceMode = Exclude<WorkspaceMode, 'auto'>;
 export type AgentStatus = 'idle' | 'running' | 'stopped' | 'error';
 export type JobStatus = 'running' | 'succeeded' | 'failed' | 'canceled';
 
+export const EVENT_TYPES = [
+  'team.created',
+  'agent.spawned',
+  'agent.stopped',
+  'job.created',
+  'job.started',
+  'job.succeeded',
+  'job.failed',
+  'job.canceled',
+  'message.sent',
+  'message.woken',
+  'message.wake_failed',
+  'message.read',
+] as const;
+export type AgentEventType = (typeof EVENT_TYPES)[number];
+export type AgentEventDetailValue = string | number | boolean | null;
+
 export interface AgentTeam {
   id: string;
   name?: string;
@@ -71,12 +88,27 @@ export interface AgentMessage {
   wakeJobId?: string;
 }
 
+export interface AgentEvent {
+  id: string;
+  seq: number;
+  type: AgentEventType;
+  createdAt: string;
+  teamId?: string;
+  agentId?: string;
+  actorAgentId?: string;
+  jobId?: string;
+  messageId?: string;
+  detail?: Record<string, AgentEventDetailValue>;
+}
+
 export interface AgentmuxState {
-  version: 3;
+  version: 4;
   agents: Record<string, AgentSession>;
   jobs: Record<string, AgentJob>;
   teams: Record<string, AgentTeam>;
   messages: Record<string, AgentMessage>;
+  events: AgentEvent[];
+  nextEventSeq: number;
 }
 
 export interface RunRequest {

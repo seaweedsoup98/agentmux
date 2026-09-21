@@ -5,6 +5,7 @@ import lockfile from 'proper-lockfile';
 import type {
   AgentJob,
   AgentSession,
+  AgentMessage,
   AgentTeam,
   AgentmuxState,
 } from './types.js';
@@ -22,12 +23,22 @@ interface LegacyStateV2 {
   teams: Record<string, AgentTeam>;
 }
 
+interface LegacyStateV3 {
+  version: 3;
+  agents: Record<string, AgentSession>;
+  jobs: Record<string, AgentJob>;
+  teams: Record<string, AgentTeam>;
+  messages: Record<string, AgentMessage>;
+}
+
 const EMPTY_STATE: AgentmuxState = {
-  version: 3,
+  version: 4,
   agents: {},
   jobs: {},
   teams: {},
   messages: {},
+  events: [],
+  nextEventSeq: 1,
 };
 
 export function agentmuxHome(): string {
@@ -65,15 +76,17 @@ export class StateStore {
     try {
       const value = JSON.parse(
         await readFile(this.path, 'utf8'),
-      ) as AgentmuxState | LegacyStateV1 | LegacyStateV2;
+      ) as AgentmuxState | LegacyStateV1 | LegacyStateV2 | LegacyStateV3;
 
       if (value.version === 1 && value.agents && value.jobs) {
         return {
-          version: 3,
+          version: 4,
           agents: value.agents,
           jobs: value.jobs,
           teams: {},
           messages: {},
+          events: [],
+          nextEventSeq: 1,
         };
       }
       if (
@@ -83,19 +96,40 @@ export class StateStore {
         value.teams
       ) {
         return {
-          version: 3,
+          version: 4,
           agents: value.agents,
           jobs: value.jobs,
           teams: value.teams,
           messages: {},
+          events: [],
+          nextEventSeq: 1,
         };
       }
       if (
-        value.version !== 3 ||
+        value.version === 3 &&
+        value.agents &&
+        value.jobs &&
+        value.teams &&
+        value.messages
+      ) {
+        return {
+          version: 4,
+          agents: value.agents,
+          jobs: value.jobs,
+          teams: value.teams,
+          messages: value.messages,
+          events: [],
+          nextEventSeq: 1,
+        };
+      }
+      if (
+        value.version !== 4 ||
         !value.agents ||
         !value.jobs ||
         !value.teams ||
-        !value.messages
+        !value.messages ||
+        !Array.isArray(value.events) ||
+        typeof value.nextEventSeq !== 'number'
       ) {
         throw new Error('Unsupported state format');
       }

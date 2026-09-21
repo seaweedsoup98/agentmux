@@ -23,6 +23,7 @@ The MCP server exposes a provider-neutral session API:
 - `send` — continue the same provider-native conversation
 - `whoami` — identify a managed child agent from inherited runtime context
 - `message_send`, `inbox`, `message_ack` — persisted, attributed agent-to-agent messaging
+- `events` / `events_wait` — durable, ordered orchestration history shared across MCP hosts
 - `status` — inspect an agent and its latest job
 - `result` / `wait` — fetch results or wait for multiple jobs in one MCP call
 - `list` — list local sessions
@@ -171,6 +172,19 @@ message_ack(message_ids=["msg_..."])
 
 This lets agents communicate without requiring a separate agentmux UI.
 
+### Durable orchestration events
+
+Every important lifecycle transition is also appended to a process-safe ordered event stream. Events use a monotonic `seq` cursor and cover team creation, agent spawning/stopping, job creation/start/completion/cancellation, and message delivery/read/wake state.
+
+```text
+events(after_seq=0, team_id="<team>")
+events_wait(after_seq=42, timeout_ms=30000)
+```
+
+`events_wait` is a bounded long-poll rather than tight polling. Because the cursor is persisted in the same transactional state store, Codex UI, Claude Code UI, Antigravity UI, and nested managed agents can observe the same orchestration history even when they are backed by different agentmux MCP processes. Managed agents remain restricted to their own team.
+
+The event stream is intentionally metadata-oriented: message bodies and provider stdout are not copied into events. Detailed content remains in inbox/job APIs.
+
 ## Workspace isolation
 
 Each spawned agent accepts `workspace: shared | worktree | auto`.
@@ -204,8 +218,9 @@ These mappings are intentionally conservative and are not identical security mod
 ## Roadmap
 
 - worktree cleanup and merge helpers
-- explicit handoff/delegation history across MCP hosts
-- message subscriptions / push notifications instead of inbox polling
+- explicit handoff/delegation records built on the durable event stream
+- detached local broker so jobs can outlive the MCP host that launched them
+- push subscriptions / notifications on top of `events_wait`
 - streaming progress and richer tool events
 - persistent named roles and reusable team templates
 - package publishing and one-command MCP registration
