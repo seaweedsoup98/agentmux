@@ -24,9 +24,16 @@ export const EVENT_TYPES = [
   'message.woken',
   'message.wake_failed',
   'message.read',
+  'delegation.created',
+  'delegation.accepted',
+  'delegation.completed',
+  'delegation.canceled',
 ] as const;
 export type AgentEventType = (typeof EVENT_TYPES)[number];
 export type AgentEventDetailValue = string | number | boolean | null;
+
+export const DELEGATION_STATUSES = ['pending', 'active', 'completed', 'canceled'] as const;
+export type DelegationStatus = (typeof DELEGATION_STATUSES)[number];
 
 export interface AgentTeam {
   id: string;
@@ -88,6 +95,23 @@ export interface AgentMessage {
   wakeJobId?: string;
 }
 
+export interface AgentDelegation {
+  id: string;
+  teamId?: string;
+  fromAgentId?: string;
+  toAgentId: string;
+  task: string;
+  status: DelegationStatus;
+  createdAt: string;
+  updatedAt: string;
+  messageId?: string;
+  wakeJobId?: string;
+  acceptedAt?: string;
+  completedAt?: string;
+  canceledAt?: string;
+  summary?: string;
+}
+
 export interface AgentEvent {
   id: string;
   seq: number;
@@ -102,11 +126,12 @@ export interface AgentEvent {
 }
 
 export interface AgentmuxState {
-  version: 4;
+  version: 5;
   agents: Record<string, AgentSession>;
   jobs: Record<string, AgentJob>;
   teams: Record<string, AgentTeam>;
   messages: Record<string, AgentMessage>;
+  delegations: Record<string, AgentDelegation>;
   events: AgentEvent[];
   nextEventSeq: number;
 }
