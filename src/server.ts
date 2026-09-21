@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { doctorProviders } from './doctor.js';
 import { AgentManager } from './manager.js';
-import { ACCESS_MODES, EVENT_TYPES, PROVIDERS, WORKSPACE_MODES } from './types.js';
+import { ACCESS_MODES, DELEGATION_STATUSES, EVENT_TYPES, PROVIDERS, WORKSPACE_MODES } from './types.js';
 
 function text(value: unknown) {
   return {
@@ -27,7 +27,7 @@ export function buildServer(manager: AgentManager): McpServer {
         'Managed child agents should call whoami to discover their identity and team. Prefer message_send for attributed ' +
         'agent-to-agent communication; wake=true starts a new turn only when the recipient is idle and resumable. ' +
         'When a managed agent wakes a peer and needs that work to finish, it should wait for the returned wakeJob before ending its own turn. ' +
-        'Use inbox/message_ack for persisted messages. Use events/events_wait to observe durable orchestration history across hosts. Prefer spawn_many for independent parallel tasks and wait instead ' +
+        'Use inbox/message_ack for persisted messages. Use delegate/delegation_* when work ownership or completion must be tracked explicitly. Use events/events_wait to observe durable orchestration history across hosts. Prefer spawn_many for independent parallel tasks and wait instead ' +
         'of tight result polling. Use read-only access for analysis/review unless edits are needed. Keep workspace=auto ' +
         'unless explicit isolation is required. Do not use full access unless the task requires it.',
     },
@@ -196,6 +196,105 @@ export function buildServer(manager: AgentManager): McpServer {
     async ({ message_ids }) => {
       try {
         return text(await manager.acknowledgeMessages(message_ids));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'delegate',
+    {
+      description:
+        'Create a tracked delegation to an accessible agent. The task is persisted as a message; wake=true resumes the recipient immediately when possible.',
+      inputSchema: z.object({
+        to_agent_id: z.string().min(1),
+        task: z.string().min(1).max(65_536),
+        wake: z.boolean().default(true),
+      }),
+    },
+    async ({ to_agent_id, task, wake }) => {
+      try {
+        return text(await manager.delegate(to_agent_id, task, wake));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'delegation_list',
+    {
+      description:
+        'List tracked delegations visible to the caller, optionally filtered by team, agent, or status.',
+      inputSchema: z.object({
+        team_id: z.string().min(1).optional(),
+        agent_id: z.string().min(1).optional(),
+        status: z.enum(DELEGATION_STATUSES).optional(),
+        limit: z.number().int().min(1).max(500).default(100),
+      }),
+    },
+    async ({ team_id, agent_id, status, limit }) => {
+      try {
+        return text(
+          await manager.delegations({
+            teamId: team_id,
+            agentId: agent_id,
+            status,
+            limit,
+          }),
+        );
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'delegation_accept',
+    {
+      description:
+        'Accept a pending delegation. Managed agents may accept only delegations assigned to themselves.',
+      inputSchema: z.object({ delegation_id: z.string().min(1) }),
+    },
+    async ({ delegation_id }) => {
+      try {
+        return text(await manager.acceptDelegation(delegation_id));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'delegation_complete',
+    {
+      description:
+        'Mark a delegation complete with an optional concise result summary.',
+      inputSchema: z.object({
+        delegation_id: z.string().min(1),
+        summary: z.string().max(16_384).optional(),
+      }),
+    },
+    async ({ delegation_id, summary }) => {
+      try {
+        return text(await manager.completeDelegation(delegation_id, summary));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'delegation_cancel',
+    {
+      description:
+        'Cancel a non-terminal delegation. Managed callers may cancel delegations they sent or received.',
+      inputSchema: z.object({ delegation_id: z.string().min(1) }),
+    },
+    async ({ delegation_id }) => {
+      try {
+        return text(await manager.cancelDelegation(delegation_id));
       } catch (error) {
         return failure(error);
       }
