@@ -491,6 +491,73 @@ export function buildServer(manager: AgentManager): McpServer {
   );
 
   server.registerTool(
+    'workspace_status',
+    {
+      description:
+        'Inspect an isolated agent worktree without modifying it.',
+      inputSchema: z.object({ agent_id: z.string().min(1) }),
+    },
+    async ({ agent_id }) => {
+      try {
+        return text(await manager.workspaceStatus(agent_id));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'workspace_diff',
+    {
+      description:
+        'Build a complete base-relative patch for an isolated worktree, including staged, unstaged, committed, deleted, and untracked files.',
+      inputSchema: z.object({ agent_id: z.string().min(1) }),
+    },
+    async ({ agent_id }) => {
+      try {
+        return text(await manager.workspaceDiff(agent_id));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'workspace_apply',
+    {
+      description:
+        'Apply an isolated worktree patch to a clean base repository after git apply --check. External control towers only.',
+      inputSchema: z.object({ agent_id: z.string().min(1) }),
+    },
+    async ({ agent_id }) => {
+      try {
+        return text(await manager.workspaceApply(agent_id));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'workspace_cleanup',
+    {
+      description:
+        'Remove a stopped agent isolated worktree. Dirty worktrees require force=true. External control towers only.',
+      inputSchema: z.object({
+        agent_id: z.string().min(1),
+        force: z.boolean().default(false),
+      }),
+    },
+    async ({ agent_id, force }) => {
+      try {
+        return text(await manager.workspaceCleanup(agent_id, force));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
     'runtime_status',
     {
       description:

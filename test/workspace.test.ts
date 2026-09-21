@@ -4,7 +4,14 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { chooseWorkspace, createWorktree } from '../src/workspace.js';
+import {
+  applyWorktree,
+  chooseWorkspace,
+  cleanupWorktree,
+  createWorktree,
+  diffWorktree,
+  inspectWorktree,
+} from '../src/workspace.js';
 
 function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -43,6 +50,7 @@ test('createWorktree preserves repository contents in a detached worktree', asyn
   assert.notEqual(result.cwd, gitRepo);
   assert.equal(await readFile(join(result.cwd, 'hello.txt'), 'utf8'), 'hello\n');
   assert.equal(result.gitRoot, gitRepo);
+  assert.match(result.baseCommit, /^[0-9a-f]{40}$/);
 });
 
 
@@ -63,4 +71,94 @@ test('createWorktree refuses a dirty base repository', async () => {
     () => createWorktree('a_dirty', gitRepo, home),
     /dirty repository/,
   );
+});
+
+
+test('worktree diff captures committed, unstaged, and untracked changes and applies them safely', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-worktree-apply-'));
+  const gitRepo = join(root, 'repo');
+  const home = join(root, 'home');
+
+  await run('git', ['init', gitRepo]);
+  await run('git', ['-C', gitRepo, 'config', 'user.email', 'agentmux@example.invalid']);
+  await run('git', ['-C', gitRepo, 'config', 'user.name', 'agentmux test']);
+  await writeFile(join(gitRepo, 'hello.txt'), 'base\n');
+  await run('git', ['-C', gitRepo, 'add', 'hello.txt']);
+  await run('git', ['-C', gitRepo, 'commit', '-m', 'base']);
+
+  const worktree = await createWorktree('a_apply', gitRepo, home);
+  await writeFile(join(worktree.worktreePath, 'committed.txt'), 'committed\n');
+  await run('git', ['-C', worktree.worktreePath, 'add', 'committed.txt']);
+  await run('git', ['-C', worktree.worktreePath, 'commit', '-m', 'agent commit']);
+  await writeFile(join(worktree.worktreePath, 'hello.txt'), 'changed\n');
+  await writeFile(join(worktree.worktreePath, 'untracked.txt'), 'new\n');
+
+  const status = await inspectWorktree(
+    worktree.worktreePath,
+    worktree.gitRoot,
+    worktree.baseCommit,
+  );
+  assert.equal(status.exists, true);
+  assert.equal(status.changed, true);
+
+  const diff = await diffWorktree(
+    worktree.worktreePath,
+    worktree.gitRoot,
+    worktree.baseCommit,
+  );
+  assert.equal(diff.changed, true);
+  assert.match(diff.patch, /committed\.txt/);
+  assert.match(diff.patch, /hello\.txt/);
+  assert.match(diff.patch, /untracked\.txt/);
+  assert.equal(await readFile(join(gitRepo, 'hello.txt'), 'utf8'), 'base\n');
+
+  const applied = await applyWorktree(
+    worktree.worktreePath,
+    worktree.gitRoot,
+    worktree.baseCommit,
+  );
+  assert.equal(applied.applied, true);
+  assert.equal(await readFile(join(gitRepo, 'hello.txt'), 'utf8'), 'changed\n');
+  assert.equal(await readFile(join(gitRepo, 'committed.txt'), 'utf8'), 'committed\n');
+  assert.equal(await readFile(join(gitRepo, 'untracked.txt'), 'utf8'), 'new\n');
+
+  await assert.rejects(
+    () => cleanupWorktree(worktree.worktreePath, worktree.gitRoot),
+    /uncommitted changes/,
+  );
+  const cleaned = await cleanupWorktree(
+    worktree.worktreePath,
+    worktree.gitRoot,
+    true,
+  );
+  assert.equal(cleaned.removed, true);
+});
+
+test('worktree apply refuses a dirty base repository', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-worktree-dirty-apply-'));
+  const gitRepo = join(root, 'repo');
+  const home = join(root, 'home');
+
+  await run('git', ['init', gitRepo]);
+  await run('git', ['-C', gitRepo, 'config', 'user.email', 'agentmux@example.invalid']);
+  await run('git', ['-C', gitRepo, 'config', 'user.name', 'agentmux test']);
+  await writeFile(join(gitRepo, 'hello.txt'), 'base\n');
+  await run('git', ['-C', gitRepo, 'add', 'hello.txt']);
+  await run('git', ['-C', gitRepo, 'commit', '-m', 'base']);
+
+  const worktree = await createWorktree('a_dirty_apply', gitRepo, home);
+  await writeFile(join(worktree.worktreePath, 'hello.txt'), 'agent\n');
+  await writeFile(join(gitRepo, 'hello.txt'), 'local\n');
+
+  await assert.rejects(
+    () =>
+      applyWorktree(
+        worktree.worktreePath,
+        worktree.gitRoot,
+        worktree.baseCommit,
+      ),
+    /dirty base repository/,
+  );
+
+  await cleanupWorktree(worktree.worktreePath, worktree.gitRoot, true);
 });
