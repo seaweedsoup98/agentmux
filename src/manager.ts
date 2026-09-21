@@ -306,6 +306,31 @@ export class AgentManager {
     }
   }
 
+  async shutdown(): Promise<void> {
+    this.runner.cancelAll();
+    const now = new Date().toISOString();
+
+    for (const agent of Object.values(this.state.agents)) {
+      if (agent.status !== 'running') continue;
+      if (agent.activeJobId) {
+        const job = this.state.jobs[agent.activeJobId];
+        if (job?.status === 'running') {
+          job.status = 'canceled';
+          job.finishedAt = now;
+          job.error = 'Canceled because agentmux shut down';
+        }
+      }
+      agent.status = agent.nativeSessionId ? 'idle' : 'error';
+      agent.activeJobId = undefined;
+      agent.updatedAt = now;
+      agent.error = agent.nativeSessionId
+        ? undefined
+        : 'Initial run was interrupted before a native session ID was captured';
+    }
+
+    await this.store.save(this.state);
+  }
+
   list(): AgentSession[] {
     return Object.values(this.state.agents)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
