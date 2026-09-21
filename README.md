@@ -23,6 +23,7 @@ The MCP server exposes a provider-neutral session API:
 - `send` — continue the same provider-native conversation
 - `whoami` — identify a managed child agent from inherited runtime context
 - `message_send`, `inbox`, `message_ack` — persisted, attributed agent-to-agent messaging
+- `delegate`, `delegation_list`, `delegation_accept`, `delegation_complete`, `delegation_cancel` — explicit tracked work handoff
 - `events` / `events_wait` — durable, ordered orchestration history shared across MCP hosts
 - `status` — inspect an agent and its latest job
 - `result` / `wait` — fetch results or wait for multiple jobs in one MCP call
@@ -172,6 +173,22 @@ message_ack(message_ids=["msg_..."])
 
 This lets agents communicate without requiring a separate agentmux UI.
 
+### Tracked delegations
+
+Use messages for coordination and use delegations when work ownership/completion matters.
+
+```text
+delegate(
+  to_agent_id="<specialist>",
+  task="Review the provider adapter and report concrete defects.",
+  wake=true
+)
+```
+
+A delegation is `pending` until accepted, `active` while owned by the target, then `completed` or `canceled`. With `wake=true`, an idle resumable target is woken immediately and the delegation becomes active automatically. If wake fails because the target is busy, the task remains persisted as a pending delegation plus an inbox message.
+
+Managed agents can delegate only within their team. The assigned agent can explicitly accept and complete the work, while the sender or receiver can cancel a non-terminal delegation. Delegation transitions are also emitted into the durable event stream.
+
 ### Durable orchestration events
 
 Every important lifecycle transition is also appended to a process-safe ordered event stream. Events use a monotonic `seq` cursor and cover team creation, agent spawning/stopping, job creation/start/completion/cancellation, and message delivery/read/wake state.
@@ -218,7 +235,7 @@ These mappings are intentionally conservative and are not identical security mod
 ## Roadmap
 
 - worktree cleanup and merge helpers
-- explicit handoff/delegation records built on the durable event stream
+- delegation dependencies / parent-child task graphs
 - detached local broker so jobs can outlive the MCP host that launched them
 - push subscriptions / notifications on top of `events_wait`
 - streaming progress and richer tool events
