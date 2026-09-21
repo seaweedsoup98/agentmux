@@ -35,6 +35,13 @@ if (pkg.bin?.agentmux !== 'dist/index.js') {
   errors.push('bin.agentmux must point to dist/index.js.');
 }
 
+const changelog = await readFile('CHANGELOG.md', 'utf8');
+if (!changelog.includes('## ' + pkg.version)) {
+  errors.push(
+    'CHANGELOG.md must contain a "## ' + pkg.version + '" section.',
+  );
+}
+
 for (const required of ['dist', 'plugins', '.agents', '.claude-plugin', 'README.md', 'CHANGELOG.md', 'LICENSE']) {
   if (!pkg.files?.includes(required)) {
     errors.push('package files[] is missing ' + JSON.stringify(required) + '.');
