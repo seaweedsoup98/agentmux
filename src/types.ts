@@ -1,0 +1,80 @@
+export const PROVIDERS = ['codex', 'claude', 'antigravity'] as const;
+export type ProviderName = (typeof PROVIDERS)[number];
+
+export const ACCESS_MODES = ['read-only', 'workspace-write', 'full'] as const;
+export type AccessMode = (typeof ACCESS_MODES)[number];
+
+export type AgentStatus = 'idle' | 'running' | 'stopped' | 'error';
+export type JobStatus = 'running' | 'succeeded' | 'failed' | 'canceled';
+
+export interface AgentSession {
+  id: string;
+  name?: string;
+  provider: ProviderName;
+  nativeSessionId?: string;
+  cwd: string;
+  model?: string;
+  effort?: string;
+  role?: string;
+  access: AccessMode;
+  status: AgentStatus;
+  activeJobId?: string;
+  latestJobId?: string;
+  createdAt: string;
+  updatedAt: string;
+  error?: string;
+}
+
+export interface AgentJob {
+  id: string;
+  agentId: string;
+  status: JobStatus;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  response?: string;
+  error?: string;
+  stderr?: string;
+  exitCode?: number | null;
+}
+
+export interface AgentmuxState {
+  version: 1;
+  agents: Record<string, AgentSession>;
+  jobs: Record<string, AgentJob>;
+}
+
+export interface RunRequest {
+  prompt: string;
+  cwd: string;
+  model?: string;
+  effort?: string;
+  access: AccessMode;
+}
+
+export interface CommandSpec {
+  command: string;
+  args: string[];
+  cwd: string;
+}
+
+export interface ProviderOutput {
+  nativeSessionId?: string;
+  response?: string;
+  error?: string;
+  success: boolean;
+}
+
+export interface ProviderAdapter {
+  readonly name: ProviderName;
+  start(request: RunRequest): CommandSpec;
+  resume(request: RunRequest, nativeSessionId: string): CommandSpec;
+  parse(stdout: string): ProviderOutput;
+}
+
+export interface ProcessResult {
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+}

@@ -1,0 +1,251 @@
+import { randomUUID } from 'node:crypto';
+import { stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { ProcessRunner } from './process.js';
+import { getProvider, listProviders } from './providers.js';
+import { StateStore } from './state.js';
+import type {
+  AccessMode,
+  AgentJob,
+  AgentSession,
+  AgentmuxState,
+  ProviderName,
+  RunRequest,
+} from './types.js';
+
+export interface SpawnOptions {
+  provider: ProviderName;
+  prompt: string;
+  cwd?: string;
+  name?: string;
+  role?: string;
+  model?: string;
+  effort?: string;
+  access?: AccessMode;
+}
+
+export class AgentManager {
+  private constructor(
+    private readonly store: StateStore,
+    private readonly runner: ProcessRunner,
+    private readonly state: AgentmuxState,
+  ) {}
+
+  static async create(store = new StateStore()): Promise<AgentManager> {
+    const state = await store.load();
+    let recovered = false;
+    const now = new Date().toISOString();
+
+    for (const job of Object.values(state.jobs)) {
+      if (job.status !== 'running') continue;
+      job.status = 'failed';
+      job.finishedAt = now;
+      job.error = 'agentmux restarted before this job completed';
+      recovered = true;
+    }
+
+    for (const agent of Object.values(state.agents)) {
+      if (agent.status !== 'running') continue;
+      agent.status = agent.nativeSessionId ? 'idle' : 'error';
+      agent.activeJobId = undefined;
+      agent.updatedAt = now;
+      agent.error = agent.nativeSessionId
+        ? undefined
+        : 'Initial run was interrupted before a native session ID was captured';
+      recovered = true;
+    }
+
+    if (recovered) await store.save(state);
+    return new AgentManager(store, new ProcessRunner(), state);
+  }
+
+  providers() {
+    return listProviders();
+  }
+
+  async spawn(options: SpawnOptions): Promise<{ agent: AgentSession; job: AgentJob }> {
+    const cwd = resolve(options.cwd ?? process.cwd());
+    const info = await stat(cwd);
+    if (!info.isDirectory()) throw new Error('cwd is not a directory: ' + cwd);
+
+    const now = new Date().toISOString();
+    const agent: AgentSession = {
+      id: this.id('a'),
+      name: options.name,
+      provider: options.provider,
+      cwd,
+      model: options.model,
+      effort: options.effort,
+      role: options.role,
+      access: options.access ?? 'workspace-write',
+      status: 'running',
+      createdAt: now,
+      updatedAt: now,
+    };
+    const job = this.newJob(agent.id, now);
+
+    agent.activeJobId = job.id;
+    agent.latestJobId = job.id;
+    this.state.agents[agent.id] = agent;
+    this.state.jobs[job.id] = job;
+    await this.store.save(this.state);
+
+    void this.execute(agent.id, job.id, options.prompt, true);
+    return { agent: structuredClone(agent), job: structuredClone(job) };
+  }
+
+  async send(agentId: string, prompt: string): Promise<AgentJob> {
+    const agent = this.requireAgent(agentId);
+    if (agent.status === 'running') {
+      throw new Error('Agent already has a running job: ' + agent.activeJobId);
+    }
+    if (agent.status === 'stopped') throw new Error('Agent is stopped');
+    if (!agent.nativeSessionId) throw new Error('Agent has no resumable native session ID');
+
+    const now = new Date().toISOString();
+    const job = this.newJob(agent.id, now);
+
+    agent.status = 'running';
+    agent.activeJobId = job.id;
+    agent.latestJobId = job.id;
+    agent.updatedAt = now;
+    agent.error = undefined;
+    this.state.jobs[job.id] = job;
+    await this.store.save(this.state);
+
+    void this.execute(agent.id, job.id, prompt, false);
+    return structuredClone(job);
+  }
+
+  status(agentId: string): { agent: AgentSession; latestJob?: AgentJob } {
+    const agent = this.requireAgent(agentId);
+    return {
+      agent: structuredClone(agent),
+      latestJob: agent.latestJobId
+        ? structuredClone(this.state.jobs[agent.latestJobId])
+        : undefined,
+    };
+  }
+
+  result(jobId: string): AgentJob {
+    const job = this.state.jobs[jobId];
+    if (!job) throw new Error('Unknown job: ' + jobId);
+    return structuredClone(job);
+  }
+
+  list(): AgentSession[] {
+    return Object.values(this.state.agents)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((agent) => structuredClone(agent));
+  }
+
+  async kill(agentId: string): Promise<AgentSession> {
+    const agent = this.requireAgent(agentId);
+    const now = new Date().toISOString();
+
+    if (agent.activeJobId) {
+      this.runner.cancel(agent.activeJobId);
+      const job = this.state.jobs[agent.activeJobId];
+      if (job?.status === 'running') {
+        job.status = 'canceled';
+        job.finishedAt = now;
+        job.error = 'Canceled by agentmux';
+      }
+    }
+
+    agent.status = 'stopped';
+    agent.activeJobId = undefined;
+    agent.updatedAt = now;
+    await this.store.save(this.state);
+    return structuredClone(agent);
+  }
+
+  private async execute(
+    agentId: string,
+    jobId: string,
+    prompt: string,
+    firstRun: boolean,
+  ): Promise<void> {
+    const agent = this.state.agents[agentId];
+    const job = this.state.jobs[jobId];
+    if (!agent || !job) return;
+
+    job.startedAt = new Date().toISOString();
+    await this.store.save(this.state);
+
+    try {
+      const provider = getProvider(agent.provider);
+      const request: RunRequest = {
+        prompt,
+        cwd: agent.cwd,
+        model: agent.model,
+        effort: agent.effort,
+        access: agent.access,
+      };
+      const command = firstRun
+        ? provider.start(request)
+        : provider.resume(request, agent.nativeSessionId as string);
+      const processResult = await this.runner.run(jobId, command);
+
+      if (job.status === 'canceled' || agent.status === 'stopped') return;
+
+      const parsed = provider.parse(processResult.stdout);
+      if (parsed.nativeSessionId) agent.nativeSessionId = parsed.nativeSessionId;
+      const ok = processResult.exitCode === 0 && parsed.success;
+
+      job.exitCode = processResult.exitCode;
+      job.response = parsed.response;
+      job.stderr = this.tail(processResult.stderr, 8192);
+      job.finishedAt = new Date().toISOString();
+      job.status = ok ? 'succeeded' : 'failed';
+      job.error = ok
+        ? undefined
+        : parsed.error ??
+          this.tail(processResult.stderr, 2048) ??
+          'Provider exited without a successful terminal result';
+
+      agent.status = ok ? 'idle' : 'error';
+      agent.activeJobId = undefined;
+      agent.updatedAt = job.finishedAt;
+      agent.error = job.error;
+    } catch (error) {
+      if (job.status === 'canceled' || agent.status === 'stopped') return;
+
+      const message = error instanceof Error ? error.message : String(error);
+      job.status = 'failed';
+      job.error = message;
+      job.finishedAt = new Date().toISOString();
+
+      agent.status = 'error';
+      agent.activeJobId = undefined;
+      agent.updatedAt = job.finishedAt;
+      agent.error = message;
+    }
+
+    await this.store.save(this.state);
+  }
+
+  private newJob(agentId: string, now: string): AgentJob {
+    return {
+      id: this.id('j'),
+      agentId,
+      status: 'running',
+      createdAt: now,
+    };
+  }
+
+  private requireAgent(agentId: string): AgentSession {
+    const agent = this.state.agents[agentId];
+    if (!agent) throw new Error('Unknown agent: ' + agentId);
+    return agent;
+  }
+
+  private id(prefix: string): string {
+    return prefix + '_' + randomUUID().replaceAll('-', '').slice(0, 12);
+  }
+
+  private tail(value: string, max: number): string | undefined {
+    const trimmed = value.trim();
+    return trimmed ? trimmed.slice(-max) : undefined;
+  }
+}

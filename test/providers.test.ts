@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { getProvider } from '../src/providers.js';
+
+const request = {
+  prompt: 'hello',
+  cwd: '/tmp/project',
+  access: 'workspace-write' as const,
+};
+
+test('Codex parser extracts thread and final message', () => {
+  const output = [
+    JSON.stringify({ type: 'thread.started', thread_id: 'thread-1' }),
+    JSON.stringify({ type: 'turn.started' }),
+    JSON.stringify({
+      type: 'item.completed',
+      item: { type: 'assistant_message', text: 'done' },
+    }),
+    JSON.stringify({ type: 'turn.completed', usage: {} }),
+  ].join('\n');
+
+  assert.deepEqual(getProvider('codex').parse(output), {
+    nativeSessionId: 'thread-1',
+    response: 'done',
+    error: undefined,
+    success: true,
+  });
+});
+
+test('Claude adapter resumes by native session id', () => {
+  const command = getProvider('claude').resume(request, 'session-1');
+  assert.equal(command.command, 'claude');
+  assert.ok(command.args.includes('--resume'));
+  assert.ok(command.args.includes('session-1'));
+
+  assert.equal(
+    getProvider('claude').parse(
+      JSON.stringify({
+        session_id: 'session-1',
+        result: 'ok',
+        is_error: false,
+      }),
+    ).success,
+    true,
+  );
+});
+
+test('Antigravity parser extracts conversation id', () => {
+  assert.deepEqual(
+    getProvider('antigravity').parse(
+      JSON.stringify({
+        conversation_id: 'conversation-1',
+        status: 'SUCCESS',
+        response: 'ok',
+      }),
+    ),
+    {
+      nativeSessionId: 'conversation-1',
+      response: 'ok',
+      error: undefined,
+      success: true,
+    },
+  );
+});
