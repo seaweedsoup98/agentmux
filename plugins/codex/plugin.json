@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "agentmux",
+  "version": "0.1.0",
+  "description": "Cross-provider coding-agent orchestration for Codex and compatible Agent Plugins clients.",
+  "author": {
+    "name": "agentmux"
+  },
+  "repository": "https://github.com/seaweedsoup98/agentmux",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "coding-agent",
+    "multi-agent",
+    "codex",
+    "claude-code",
+    "antigravity"
+  ]
+}
