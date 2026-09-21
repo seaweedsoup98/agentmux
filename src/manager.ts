@@ -180,6 +180,16 @@ export class AgentManager {
     return { agent: structuredClone(agent), job: structuredClone(job) };
   }
 
+  async spawnMany(
+    options: SpawnOptions[],
+  ): Promise<Array<{ agent: AgentSession; job: AgentJob }>> {
+    const results: Array<{ agent: AgentSession; job: AgentJob }> = [];
+    for (const option of options) {
+      results.push(await this.spawn(option));
+    }
+    return results;
+  }
+
   async send(agentId: string, prompt: string): Promise<AgentJob> {
     const agent = this.requireAgent(agentId);
     if (agent.status === 'running') {
@@ -217,6 +227,29 @@ export class AgentManager {
     const job = this.state.jobs[jobId];
     if (!job) throw new Error('Unknown job: ' + jobId);
     return structuredClone(job);
+  }
+
+  async wait(
+    jobIds: string[],
+    timeoutMs = 30_000,
+  ): Promise<{ jobs: AgentJob[]; timedOut: boolean }> {
+    const ids = [...new Set(jobIds)];
+    const timeout = Math.max(0, Math.min(timeoutMs, 60_000));
+    const deadline = Date.now() + timeout;
+
+    while (true) {
+      const jobs = ids.map((jobId) => this.result(jobId));
+      if (jobs.every((job) => job.status !== 'running')) {
+        return { jobs, timedOut: false };
+      }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        return { jobs, timedOut: true };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
+    }
   }
 
   list(): AgentSession[] {
