@@ -62,7 +62,11 @@ A managed agent can also supervise children. Provider subprocesses inherit `AGEN
 
 Managed agents are team-scoped: they can inspect and send work within their team, read only their own inbox, and stop only themselves or descendants. An external Codex/Claude Code/Antigravity UI has no inherited agent ID and remains the unrestricted control tower. This is a coordination boundary, not an OS-level security sandbox.
 
-Multiple agentmux MCP processes on the same machine can share this state safely. State mutations are serialized with an inter-process filesystem lock and committed by atomic replacement, while each job records the process/instance that owns its running provider subprocess. This allows, for example, a Codex host to discover and resume a session originally created from Claude Code.
+Multiple agentmux MCP processes on the same machine can share this state safely. State mutations are serialized with an inter-process filesystem lock and committed by atomic replacement.
+
+Provider jobs are owned by a small detached local broker by default, not by the MCP stdio process that happened to launch them. Codex UI, Claude Code UI, Antigravity UI, and nested managed agents therefore share one local execution owner, and a running delegated job can continue if its launching UI or MCP process exits. The broker uses a local Unix socket or Windows named pipe plus a per-state capability token, and shuts itself down after an idle period.
+
+If the broker cannot start, agentmux falls back to MCP-owned execution and reports the mode through `runtime_status`. Set `AGENTMUX_EXECUTION=local` to force that fallback behavior explicitly.
 
 ## Requirements
 
@@ -152,7 +156,7 @@ The host remains the control tower. `agentmux` provides the runtime/session laye
 
 ### Agent-to-agent messaging
 
-A managed child can discover itself and its team with `whoami`, then inspect peers with `team_status`.
+A managed child can discover itself and its team with `whoami`, then inspect peers with `team_status`. Direct `send` is reserved for resuming your own managed session (or for an external control tower); peer-to-peer work must use attributed messages or tracked delegations.
 
 ```text
 message_send(
@@ -164,7 +168,7 @@ message_send(
 
 Messages are persisted before delivery. `wake=false` leaves the message unread in the peer's inbox. `wake=true` additionally resumes the peer's provider-native session when that peer is idle and resumable; if it is busy, the wake fails but the message remains in the inbox.
 
-A wake job is owned by the agentmux MCP process that launched it. A nested managed agent that needs the peer's work to complete should call `wait` on the returned `wakeJob.id` before ending its own turn. A detached broker that lets nested wake jobs outlive their launching host is intentionally left for a later layer.
+A wake job is owned by the detached broker, so it can outlive the MCP host that launched it. Call `wait` when the current turn depends on the result; otherwise the delegated work may continue independently and can be observed later through job status or the durable event stream.
 
 ```text
 inbox(unread_only=true)
@@ -236,7 +240,6 @@ These mappings are intentionally conservative and are not identical security mod
 
 - worktree cleanup and merge helpers
 - delegation dependencies / parent-child task graphs
-- detached local broker so jobs can outlive the MCP host that launched them
 - push subscriptions / notifications on top of `events_wait`
 - streaming progress and richer tool events
 - persistent named roles and reusable team templates
