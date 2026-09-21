@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { doctorProviders } from './doctor.js';
+import { doctorHosts, doctorProviders } from './doctor.js';
 import { runCommand } from './command.js';
 import { PROVIDERS, type ProviderName } from './types.js';
 
@@ -41,10 +41,12 @@ export async function runSetup(options: SetupOptions = {}): Promise<SetupResult>
   const installed = providers.filter((item) => item.installed).map((item) => item.provider);
   const selectedHosts = options.hosts ?? await selectHosts(installed, Boolean(options.yes));
   const runtime = options.runtime ?? await resolveRuntimeSpec();
+  const hostHealth = await doctorHosts(providers);
   const actions: SetupAction[] = [];
 
   for (const host of selectedHosts) {
     const health = providers.find((item) => item.provider === host);
+    const hostState = hostHealth.find((item) => item.host === host);
     if (!health?.installed) {
       actions.push({
         host,
@@ -53,6 +55,17 @@ export async function runSetup(options: SetupOptions = {}): Promise<SetupResult>
         detail:
           hostLabel(host) +
           ' is not installed. agentmux itself is installed; configure this host after installing it.',
+      });
+      continue;
+    }
+
+    if (hostState?.pluginConfigured) {
+      actions.push({
+        host,
+        status: 'skipped',
+        method: host === 'antigravity' ? 'config' : 'cli',
+        detail:
+          'Native agentmux plugin is already configured; direct MCP registration was skipped to avoid duplicate tools.',
       });
       continue;
     }
