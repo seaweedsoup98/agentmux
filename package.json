@@ -21,7 +21,9 @@
     "test": "tsx --test test/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
     "start": "node dist/index.js",
-    "prepublishOnly": "npm run check"
+    "prepublishOnly": "npm run check",
+    "e2e:real": "tsx src/e2e-real.ts",
+    "e2e:real:matrix": "tsx src/e2e-real.ts --matrix"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
