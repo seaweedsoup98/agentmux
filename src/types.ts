@@ -28,6 +28,8 @@ export const EVENT_TYPES = [
   'delegation.accepted',
   'delegation.completed',
   'delegation.canceled',
+  'workspace.applied',
+  'workspace.cleaned',
 ] as const;
 export type AgentEventType = (typeof EVENT_TYPES)[number];
 export type AgentEventDetailValue = string | number | boolean | null;
@@ -58,6 +60,9 @@ export interface AgentSession {
   workspace?: ResolvedWorkspaceMode;
   worktreePath?: string;
   gitRoot?: string;
+  worktreeBaseCommit?: string;
+  worktreeAppliedAt?: string;
+  worktreeCleanedAt?: string;
   teamId?: string;
   parentAgentId?: string;
   status: AgentStatus;
