@@ -1,9 +1,29 @@
 #!/usr/bin/env node
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { BrokerExecutionController } from './broker-client.js';
 import { AgentManager } from './manager.js';
 import { buildServer } from './server.js';
+import { StateStore } from './state.js';
 
-const manager = await AgentManager.create();
+const store = new StateStore(process.env.AGENTMUX_STATE_PATH);
+let execution;
+
+if (process.env.AGENTMUX_EXECUTION !== 'local') {
+  try {
+    execution = await BrokerExecutionController.create(store.path);
+  } catch (error) {
+    console.error(
+      'agentmux broker unavailable; falling back to MCP-owned execution:',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+const manager = await AgentManager.create(
+  store,
+  process.env.AGENTMUX_AGENT_ID || undefined,
+  execution,
+);
 const handle = serveStdio(() => buildServer(manager));
 console.error('agentmux MCP server ready');
 

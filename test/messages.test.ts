@@ -123,6 +123,10 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
     await waitOne(external, c.job.id);
 
     await assert.rejects(
+      () => managerA.send(b.agent.id, 'unattributed peer prompt'),
+      /message_send or delegate/,
+    );
+    await assert.rejects(
       () => managerA.messageSend(c.agent.id, 'cross-team'),
       /own team/,
     );
