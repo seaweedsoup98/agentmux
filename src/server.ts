@@ -491,6 +491,16 @@ export function buildServer(manager: AgentManager): McpServer {
   );
 
   server.registerTool(
+    'runtime_status',
+    {
+      description:
+        'Report whether provider jobs are owned by the detached broker or the current MCP process.',
+      inputSchema: z.object({}),
+    },
+    async () => text(await manager.runtimeStatus()),
+  );
+
+  server.registerTool(
     'providers',
     {
       description: 'List provider adapters and the local CLI command each adapter expects.',
