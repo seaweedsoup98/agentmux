@@ -55,7 +55,8 @@ export async function runSetup(options: SetupOptions = {}): Promise<SetupResult>
         method: host === 'antigravity' ? 'config' : 'cli',
         detail:
           hostLabel(host) +
-          ' is not installed. agentmux itself is installed; configure this host after installing it.',
+          ' is not installed. agentmux itself is installed; configure this host after installing it.' +
+          (health?.installHint ? ' Install: ' + health.installHint : ''),
       });
       continue;
     }
