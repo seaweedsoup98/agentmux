@@ -59,11 +59,24 @@ export interface AgentJob {
   ownerInstanceId?: string;
 }
 
+export interface AgentMessage {
+  id: string;
+  teamId?: string;
+  fromAgentId?: string;
+  toAgentId: string;
+  body: string;
+  createdAt: string;
+  readAt?: string;
+  wokenAt?: string;
+  wakeJobId?: string;
+}
+
 export interface AgentmuxState {
-  version: 2;
+  version: 3;
   agents: Record<string, AgentSession>;
   jobs: Record<string, AgentJob>;
   teams: Record<string, AgentTeam>;
+  messages: Record<string, AgentMessage>;
 }
 
 export interface RunRequest {
@@ -78,6 +91,7 @@ export interface CommandSpec {
   command: string;
   args: string[];
   cwd: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface ProviderOutput {

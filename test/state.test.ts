@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { StateStore } from '../src/state.js';
 
-test('state store migrates version 1 state in memory', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agentmux-state-'));
+test('state store migrates version 1 state to version 3', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-state-v1-'));
   const path = join(root, 'state.json');
   await writeFile(
     path,
@@ -20,14 +20,36 @@ test('state store migrates version 1 state in memory', async () => {
   const store = new StateStore(path);
   const state = await store.load();
 
-  assert.equal(state.version, 2);
+  assert.equal(state.version, 3);
   assert.deepEqual(state.teams, {});
+  assert.deepEqual(state.messages, {});
 
   await store.transaction(() => undefined);
-  const persisted = JSON.parse(await readFile(path, 'utf8')) as { version: number };
-  assert.equal(persisted.version, 2);
+  const persisted = JSON.parse(await readFile(path, 'utf8')) as {
+    version: number;
+    messages: object;
+  };
+  assert.equal(persisted.version, 3);
+  assert.deepEqual(persisted.messages, {});
 });
 
+test('state store migrates version 2 state to version 3', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-state-v2-'));
+  const path = join(root, 'state.json');
+  await writeFile(
+    path,
+    JSON.stringify({
+      version: 2,
+      agents: {},
+      jobs: {},
+      teams: {},
+    }),
+  );
+
+  const state = await new StateStore(path).load();
+  assert.equal(state.version, 3);
+  assert.deepEqual(state.messages, {});
+});
 
 test('transactions from independent stores do not lose updates', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agentmux-lock-'));
@@ -52,4 +74,3 @@ test('transactions from independent stores do not lose updates', async () => {
   const state = await stores[0].load();
   assert.equal(Object.keys(state.teams).length, 12);
 });
-
