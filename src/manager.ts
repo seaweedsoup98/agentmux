@@ -90,7 +90,20 @@ export class AgentManager {
     await store.transaction((state) => {
       for (const job of Object.values(state.jobs)) {
         if (job.status !== 'running') continue;
-        if (job.ownerPid && isProcessAlive(job.ownerPid)) continue;
+
+        const sameOwner =
+          job.ownerInstanceId === controller.owner.instanceId;
+        if (sameOwner) continue;
+
+        const staleBrokerOwner =
+          job.ownerMode === 'broker' && controller.owner.mode === 'broker';
+        if (
+          !staleBrokerOwner &&
+          job.ownerPid &&
+          isProcessAlive(job.ownerPid)
+        ) {
+          continue;
+        }
 
         job.status = 'failed';
         job.finishedAt = now;
@@ -1267,6 +1280,7 @@ export class AgentManager {
       createdAt: now,
       ownerPid: this.execution.owner.pid,
       ownerInstanceId: this.execution.owner.instanceId,
+      ownerMode: this.execution.owner.mode,
     };
   }
 
