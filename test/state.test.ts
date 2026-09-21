@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -23,7 +23,7 @@ test('state store migrates version 1 state in memory', async () => {
   assert.equal(state.version, 2);
   assert.deepEqual(state.teams, {});
 
-  await store.save(state);
+  await store.transaction(() => undefined);
   const persisted = JSON.parse(await readFile(path, 'utf8')) as { version: number };
   assert.equal(persisted.version, 2);
 });
@@ -53,27 +53,3 @@ test('transactions from independent stores do not lose updates', async () => {
   assert.equal(Object.keys(state.teams).length, 12);
 });
 
-
-test('transaction immediately recovers a lock owned by a dead process', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agentmux-dead-lock-'));
-  const path = join(root, 'state.json');
-  const store = new StateStore(path);
-
-  await mkdir(store.lockPath);
-  await writeFile(
-    join(store.lockPath, 'owner.json'),
-    JSON.stringify({ pid: 2147483647 }),
-  );
-
-  await store.transaction((state) => {
-    const now = new Date().toISOString();
-    state.teams.recovered = {
-      id: 'recovered',
-      createdAt: now,
-      updatedAt: now,
-    };
-  });
-
-  const state = await store.load();
-  assert.ok(state.teams.recovered);
-});

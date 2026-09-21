@@ -1,13 +1,7 @@
-import {
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import lockfile from 'proper-lockfile';
 import type { AgentJob, AgentSession, AgentmuxState } from './types.js';
 
 interface LegacyStateV1 {
@@ -17,9 +11,6 @@ interface LegacyStateV1 {
 }
 
 const EMPTY_STATE: AgentmuxState = { version: 2, agents: {}, jobs: {}, teams: {} };
-const LOCK_WAIT_MS = 10_000;
-const LOCK_STALE_MS = 120_000;
-const LOCK_RETRY_MS = 25;
 
 export function agentmuxHome(): string {
   return process.env.AGENTMUX_HOME ?? join(homedir(), '.agentmux');
@@ -36,15 +27,6 @@ export class StateStore {
 
   async load(): Promise<AgentmuxState> {
     return this.loadUnlocked();
-  }
-
-  async save(state: AgentmuxState): Promise<void> {
-    const release = await this.acquireLock();
-    try {
-      await this.writeUnlocked(state);
-    } finally {
-      await release();
-    }
   }
 
   async transaction<T>(
@@ -99,67 +81,19 @@ export class StateStore {
 
   private async acquireLock(): Promise<() => Promise<void>> {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    const startedAt = Date.now();
 
-    while (true) {
-      try {
-        await mkdir(this.lockPath);
-        await writeFile(
-          join(this.lockPath, 'owner.json'),
-          JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() }),
-          { encoding: 'utf8', mode: 0o600 },
-        ).catch(() => undefined);
-
-        return async () => {
-          await rm(this.lockPath, { recursive: true, force: true });
-        };
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== 'EEXIST') throw error;
-
-        try {
-          const owner = await this.readLockOwner();
-          const lockStat = await stat(this.lockPath);
-          const ownerDead =
-            owner?.pid !== undefined && !isProcessAlive(owner.pid);
-          const stale = Date.now() - lockStat.mtimeMs > LOCK_STALE_MS;
-
-          if (ownerDead || stale) {
-            await rm(this.lockPath, { recursive: true, force: true });
-            continue;
-          }
-        } catch (statError) {
-          if ((statError as NodeJS.ErrnoException).code === 'ENOENT') continue;
-          throw statError;
-        }
-
-        if (Date.now() - startedAt >= LOCK_WAIT_MS) {
-          throw new Error('Timed out waiting for agentmux state lock: ' + this.lockPath);
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
-      }
-    }
-  }
-
-  private async readLockOwner(): Promise<{ pid?: number } | undefined> {
-    try {
-      return JSON.parse(
-        await readFile(join(this.lockPath, 'owner.json'), 'utf8'),
-      ) as { pid?: number };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-      return undefined;
-    }
-  }
-}
-
-function isProcessAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+    return lockfile.lock(this.path, {
+      realpath: false,
+      lockfilePath: this.lockPath,
+      stale: 30_000,
+      update: 10_000,
+      retries: {
+        retries: 80,
+        factor: 1.2,
+        minTimeout: 25,
+        maxTimeout: 250,
+        randomize: true,
+      },
+    });
   }
 }

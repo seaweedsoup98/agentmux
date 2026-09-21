@@ -26,13 +26,15 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "cross-spawn": "^7.0.6",
-    "zod": "^4.0.0"
+    "zod": "^4.0.0",
+    "proper-lockfile": "^4.1.2"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "@types/proper-lockfile": "^4.1.4"
   },
   "repository": {
     "type": "git",
