@@ -156,9 +156,9 @@ Worktrees are created from Git `HEAD`. To avoid silently dropping local edits, w
 
 | agentmux | Codex | Claude Code | Antigravity |
 | --- | --- | --- | --- |
-| `read-only` | `read-only` sandbox | `plan` permission mode | sandbox mode |
-| `workspace-write` | `workspace-write` sandbox | `acceptEdits` | provider default |
-| `full` | `danger-full-access` | skip permission prompts | skip permission prompts |
+| `read-only` | `read-only` sandbox | `plan` permission mode | `plan` mode + terminal sandbox |
+| `workspace-write` | `workspace-write` sandbox | `acceptEdits` | `accept-edits` + terminal sandbox |
+| `full` | `danger-full-access` | skip permission prompts | `accept-edits` + skip permission prompts |
 
 These mappings are intentionally conservative and are not identical security models.
 
