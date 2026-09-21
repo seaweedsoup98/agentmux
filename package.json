@@ -1,6 +1,6 @@
 {
   "name": "@jiho.ko/agentmux",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Use any coding agent as a subagent of another — across Codex, Claude Code, Gemini, and more.",
   "type": "module",
   "bin": {
@@ -28,7 +28,8 @@
     "prepublishOnly": "npm run check",
     "e2e:real": "tsx src/e2e-real.ts",
     "e2e:real:matrix": "tsx src/e2e-real.ts --matrix",
-    "release:check": "node scripts/release-check.mjs"
+    "release:check": "node scripts/release-check.mjs",
+    "version": "node scripts/sync-version.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.1
+
+### Native plugin installation
+- Add one-command native plugin installation for Codex, Claude Code, and Antigravity.
+- Add `agentmux plugins install --hosts ...` with automatic installed-host detection.
+- Add `agentmux plugins status` for plugin/direct-MCP visibility.
+- Add `--replace-mcp` migration so an installed native plugin can safely replace the existing direct `agentmux` MCP registration.
+- Codex installation uses its repository marketplace and `codex plugin add`.
+- Claude Code installation uses its repository marketplace, user-scope install, and explicit enable.
+- Antigravity installation stages the bundled plugin directory through `agy plugin install`.
+- Add cross-platform fake-CLI coverage for all three plugin installers and direct-MCP migration.
+
 ## 0.1.0
 
 Initial public release.

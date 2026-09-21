@@ -78,9 +78,43 @@ A valid installation can therefore be Codex + Antigravity only, Claude Code only
 
 ## Install and configure
 
-### Recommended: npm
+### Recommended: native plugins
 
-Run setup directly without a permanent global install:
+Install agentmux as a native plugin in every supported agent UI that is currently installed:
+
+```bash
+npx -y '@jiho.ko/agentmux@latest' plugins install
+```
+
+Or choose hosts explicitly:
+
+```bash
+npx -y '@jiho.ko/agentmux@latest' plugins install --hosts codex claude antigravity
+```
+
+If you previously configured agentmux as a direct MCP server, migrate to the native plugin and remove the duplicate direct registration only after the plugin install succeeds:
+
+```bash
+npx -y '@jiho.ko/agentmux@latest' plugins install --hosts codex antigravity --replace-mcp
+```
+
+Check the resulting host state:
+
+```bash
+npx -y '@jiho.ko/agentmux@latest' plugins status
+```
+
+The installer uses each host's native plugin mechanism:
+
+- Codex: GitHub marketplace + `codex plugin add agentmux@agentmux`
+- Claude Code: GitHub marketplace + user-scope install + enable
+- Antigravity: `agy plugin install` using the plugin bundle shipped inside the npm package
+
+Restart/open a new agent session after installation so plugin-provided skills and MCP tools are loaded.
+
+### Direct MCP fallback
+
+If a host does not support or should not use plugins, register agentmux directly as MCP instead:
 
 ```bash
 npx -y '@jiho.ko/agentmux@latest' setup
@@ -160,46 +194,46 @@ When setup is running from an npx cache, it registers `npx -y @jiho.ko/agentmux@
 
 ## Native plugins
 
-The repository also ships native plugin bundles for all three ecosystems. Plugins and direct `agentmux setup` registration are alternative integration methods; do not enable both for the same host unless you intentionally want duplicate tool surfaces.
-
-Show the bundled plugin paths:
+The repository ships native plugin bundles for Codex/OpenAI, Claude Code, and Antigravity. The recommended installer is:
 
 ```bash
-agentmux plugins
+npx -y '@jiho.ko/agentmux@latest' plugins install
 ```
 
-### Codex / OpenAI plugin
+### Codex / OpenAI
 
-The repository exposes a Codex marketplace in `.agents/plugins/marketplace.json`. The Codex bundle includes the current portable Agent Plugins `plugin.json + mcp.json` format plus the `.codex-plugin/.mcp.json` compatibility layout. Add the marketplace with:
+Manual equivalent:
 
 ```bash
 codex plugin marketplace add seaweedsoup98/agentmux --ref main
+codex plugin add agentmux@agentmux
 ```
 
-Then install `agentmux` from `/plugins` in a supported Codex surface. The plugin bundle lives under `plugins/codex`.
+The repository marketplace is `.agents/plugins/marketplace.json`; the plugin bundle is `plugins/codex`.
 
-### Claude Code plugin
+### Claude Code
 
-The repository is also a Claude Code plugin marketplace:
+Manual equivalent:
 
 ```bash
-claude plugin marketplace add seaweedsoup98/agentmux
+claude plugin marketplace add seaweedsoup98/agentmux@main --scope user
 claude plugin install agentmux@agentmux --scope user
+claude plugin enable agentmux@agentmux --scope user
 ```
 
-The Claude plugin lives under `plugins/claude`.
+The Claude marketplace is `.claude-plugin/marketplace.json`; the plugin bundle is `plugins/claude`.
 
-### Antigravity plugin
+### Antigravity
 
-Antigravity can install the local plugin bundle directly:
+The universal installer stages the npm-bundled plugin automatically. From a repository checkout, the manual equivalent is:
 
 ```bash
 agy plugin install ./plugins/antigravity
 ```
 
-The plugin is then available across Antigravity surfaces that share the global plugin profile.
+The plugin bundle is `plugins/antigravity`.
 
-All native plugin MCP definitions launch `npx -y @jiho.ko/agentmux@latest`, so published plugins resolve the same npm runtime. For a development checkout, use the local `agentmux setup` flow instead.
+All three native plugins bundle the orchestration skill and launch the same published MCP runtime, `npx -y @jiho.ko/agentmux@latest`. Direct MCP registration and native plugin installation are alternative integration methods; use `--replace-mcp` when migrating to avoid duplicate tool surfaces.
 
 ## Development
 

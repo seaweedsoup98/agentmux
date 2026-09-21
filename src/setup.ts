@@ -327,6 +327,59 @@ async function mergeJsonMcpConfig(
   }
 }
 
+export async function removeAntigravityMcpEntry(
+  homeDir = homedir(),
+): Promise<boolean> {
+  const path = join(homeDir, '.gemini', 'config', 'mcp_config.json');
+  let value: Record<string, unknown>;
+
+  try {
+    const raw = (await readFile(path, 'utf8')).replace(/^\uFEFF/, '');
+    if (!raw.trim()) return false;
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Expected a JSON object');
+    }
+    value = parsed as Record<string, unknown>;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw new Error(
+      'Cannot safely update Antigravity MCP config ' +
+        path +
+        ': ' +
+        (error instanceof Error ? error.message : String(error)),
+    );
+  }
+
+  if (
+    value.mcpServers !== undefined &&
+    (!value.mcpServers ||
+      typeof value.mcpServers !== 'object' ||
+      Array.isArray(value.mcpServers))
+  ) {
+    throw new Error('Existing mcpServers value is not a JSON object');
+  }
+
+  const servers = value.mcpServers as Record<string, unknown> | undefined;
+  if (!servers || !Object.prototype.hasOwnProperty.call(servers, 'agentmux')) {
+    return false;
+  }
+
+  const nextServers = { ...servers };
+  delete nextServers.agentmux;
+  value.mcpServers = nextServers;
+
+  const temporary = path + '.' + process.pid + '.tmp';
+  try {
+    await writeFile(temporary, JSON.stringify(value, null, 2) + '\n', 'utf8');
+    await replaceFile(temporary, path);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+  return true;
+}
+
 async function replaceFile(source: string, destination: string): Promise<void> {
   const retryable = new Set(['EPERM', 'EACCES', 'EBUSY']);
   const attempts = process.platform === 'win32' ? 9 : 1;
