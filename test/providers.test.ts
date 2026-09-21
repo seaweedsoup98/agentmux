@@ -109,3 +109,20 @@ test('Claude adapter applies model and effort on start and resume', () => {
     assert.ok(command.args.includes('high'));
   }
 });
+
+
+test('Antigravity access modes map to explicit execution and sandbox policy', () => {
+  const adapter = getProvider('antigravity');
+  const argsFor = (access: 'read-only' | 'workspace-write' | 'full') =>
+    adapter.start({ prompt: 'x', cwd: '/tmp/project', access }).args;
+
+  assert.ok(argsFor('read-only').includes('--mode=plan'));
+  assert.ok(argsFor('read-only').includes('--sandbox'));
+
+  assert.ok(argsFor('workspace-write').includes('--mode=accept-edits'));
+  assert.ok(argsFor('workspace-write').includes('--sandbox'));
+
+  assert.ok(argsFor('full').includes('--mode=accept-edits'));
+  assert.ok(argsFor('full').includes('--dangerously-skip-permissions'));
+  assert.equal(argsFor('full').includes('--sandbox'), false);
+});
