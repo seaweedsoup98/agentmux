@@ -101,6 +101,7 @@ export function buildServer(manager: AgentManager): McpServer {
               model: z.string().min(1).optional(),
               effort: z.string().min(1).optional(),
               access: z.enum(ACCESS_MODES).default('workspace-write'),
+              workspace: z.enum(WORKSPACE_MODES).default('auto'),
               team_id: z.string().min(1).optional(),
               parent_agent_id: z.string().min(1).optional(),
             }),

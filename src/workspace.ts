@@ -48,6 +48,14 @@ export async function createWorktree(
   home = agentmuxHome(),
 ): Promise<WorktreeInfo> {
   const gitRoot = await git(['-C', baseCwd, 'rev-parse', '--show-toplevel']);
+  const status = await git(['-C', gitRoot, 'status', '--porcelain=v1', '--untracked-files=normal']);
+  if (status) {
+    throw new Error(
+      'Cannot create an isolated worktree from a dirty repository. ' +
+        'Commit or stash local changes, or explicitly use workspace=shared.',
+    );
+  }
+
   const relativeCwd = relative(gitRoot, baseCwd);
 
   if (relativeCwd.startsWith('..')) {

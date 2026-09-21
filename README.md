@@ -146,9 +146,9 @@ Each spawned agent accepts `workspace: shared | worktree | auto`.
 
 - `shared` uses the requested working directory directly.
 - `worktree` creates a detached Git worktree under `~/.agentmux/worktrees/<agent-id>`.
-- `auto` is the default. Read-only agents share the workspace. A writable agent gets a worktree only when another writable shared agent is already running against the same base directory.
+- `auto` is the default. Read-only agents share the workspace. A single writable agent normally shares it; parallel writable agents in the same `spawn_many` batch are isolated before they start, and a later writable agent is isolated when another shared writer is already running.
 
-This keeps the normal single-writer workflow simple while isolating concurrent writers.
+Worktrees are created from Git `HEAD`. To avoid silently dropping local edits, worktree creation refuses a dirty repository; commit/stash first or explicitly choose `shared`. This keeps the normal single-writer workflow simple while making parallel writes explicit and reproducible.
 
 ## Access modes
 

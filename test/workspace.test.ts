@@ -44,3 +44,23 @@ test('createWorktree preserves repository contents in a detached worktree', asyn
   assert.equal(await readFile(join(result.cwd, 'hello.txt'), 'utf8'), 'hello\n');
   assert.equal(result.gitRoot, gitRepo);
 });
+
+
+test('createWorktree refuses a dirty base repository', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-dirty-worktree-'));
+  const gitRepo = join(root, 'repo');
+  const home = join(root, 'home');
+
+  await run('git', ['init', gitRepo]);
+  await run('git', ['-C', gitRepo, 'config', 'user.email', 'agentmux@example.invalid']);
+  await run('git', ['-C', gitRepo, 'config', 'user.name', 'agentmux test']);
+  await writeFile(join(gitRepo, 'hello.txt'), 'clean\n');
+  await run('git', ['-C', gitRepo, 'add', 'hello.txt']);
+  await run('git', ['-C', gitRepo, 'commit', '-m', 'initial']);
+  await writeFile(join(gitRepo, 'hello.txt'), 'dirty\n');
+
+  await assert.rejects(
+    () => createWorktree('a_dirty', gitRepo, home),
+    /dirty repository/,
+  );
+});

@@ -80,15 +80,32 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
         access: 'read-only',
       },
     ]);
-    const waited = await manager.wait(
-      batch.map(({ job: batchJob }) => batchJob.id),
-      3000,
-    );
+    assert.ok(batch.every((result) => result.ok));
+    const batchJobIds = batch.flatMap((result) => (result.ok ? [result.job.id] : []));
+    const waited = await manager.wait(batchJobIds, 3000);
     assert.equal(waited.timedOut, false);
     assert.deepEqual(
       waited.jobs.map((batchJob) => batchJob.status),
       ['succeeded', 'succeeded'],
     );
+
+    const partial = await manager.spawnMany([
+      {
+        provider: 'codex',
+        prompt: 'valid',
+        cwd,
+        access: 'read-only',
+      },
+      {
+        provider: 'codex',
+        prompt: 'invalid cwd',
+        cwd: join(root, 'missing'),
+        access: 'read-only',
+      },
+    ]);
+    assert.equal(partial[0]?.ok, true);
+    assert.equal(partial[1]?.ok, false);
+    if (partial[0]?.ok) await waitForJob(manager, partial[0].job.id);
   } finally {
     process.env.PATH = previousPath;
   }

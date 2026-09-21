@@ -209,11 +209,38 @@ export class AgentManager {
 
   async spawnMany(
     options: SpawnOptions[],
-  ): Promise<Array<{ agent: AgentSession; job: AgentJob }>> {
-    const results: Array<{ agent: AgentSession; job: AgentJob }> = [];
-    for (const option of options) {
-      results.push(await this.spawn(option));
+  ): Promise<
+    Array<
+      | { ok: true; agent: AgentSession; job: AgentJob }
+      | { ok: false; index: number; error: string }
+    >
+  > {
+    const normalized = this.normalizeBatchWorkspaces(options);
+    const order = normalized
+      .map((option, index) => ({ option, index }))
+      .sort((a, b) => {
+        const aIsolated = a.option.workspace === 'worktree' ? 0 : 1;
+        const bIsolated = b.option.workspace === 'worktree' ? 0 : 1;
+        return aIsolated - bIsolated || a.index - b.index;
+      });
+    const results = new Array<
+      | { ok: true; agent: AgentSession; job: AgentJob }
+      | { ok: false; index: number; error: string }
+    >(options.length);
+
+    for (const { option, index } of order) {
+      try {
+        const spawned = await this.spawn(option);
+        results[index] = { ok: true, ...spawned };
+      } catch (error) {
+        results[index] = {
+          ok: false,
+          index,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
     }
+
     return results;
   }
 
@@ -369,6 +396,29 @@ export class AgentManager {
     }
 
     await this.store.save(this.state);
+  }
+
+  private normalizeBatchWorkspaces(options: SpawnOptions[]): SpawnOptions[] {
+    const sharedWriterCounts = new Map<string, number>();
+
+    for (const option of options) {
+      const access = option.access ?? 'workspace-write';
+      const workspace = option.workspace ?? 'auto';
+      if (access === 'read-only' || workspace === 'worktree') continue;
+      const baseCwd = resolve(option.cwd ?? process.cwd());
+      sharedWriterCounts.set(baseCwd, (sharedWriterCounts.get(baseCwd) ?? 0) + 1);
+    }
+
+    return options.map((option) => {
+      const access = option.access ?? 'workspace-write';
+      const workspace = option.workspace ?? 'auto';
+      if (access === 'read-only' || workspace !== 'auto') return option;
+
+      const baseCwd = resolve(option.cwd ?? process.cwd());
+      if ((sharedWriterCounts.get(baseCwd) ?? 0) <= 1) return option;
+
+      return { ...option, workspace: 'worktree' };
+    });
   }
 
   private hasRunningSharedWriter(baseCwd: string): boolean {
