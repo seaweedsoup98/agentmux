@@ -159,9 +159,11 @@ const claude: ProviderAdapter = {
 };
 
 function antigravityPermissionArgs(access: AccessMode): string[] {
-  if (access === 'read-only') return ['--sandbox'];
-  if (access === 'full') return ['--dangerously-skip-permissions'];
-  return [];
+  if (access === 'read-only') return ['--mode=plan', '--sandbox'];
+  if (access === 'full') {
+    return ['--mode=accept-edits', '--dangerously-skip-permissions'];
+  }
+  return ['--mode=accept-edits', '--sandbox'];
 }
 
 const antigravity: ProviderAdapter = {
