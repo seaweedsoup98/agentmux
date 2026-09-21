@@ -106,7 +106,6 @@ async function handle(socket: net.Socket, line: string): Promise<void> {
       void runtime.execute(request.request);
       return;
     }
-    reply(socket, { id: request.id, ok: false, error: 'Unknown broker request type' });
   } catch (error) {
     reply(socket, {
       id: request.id,
