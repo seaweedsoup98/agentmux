@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
 import { AgentManager } from '../src/manager.js';
-import { StateStore } from '../src/state.js';\nimport { writeFakeCommand } from './helpers.js';
+import { StateStore } from '../src/state.js';
+import { writeFakeCommand } from './helpers.js';
 
 function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
