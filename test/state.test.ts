@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { StateStore } from '../src/state.js';
 
-test('state store migrates version 1 state to version 4', async () => {
+test('state store migrates version 1 state to version 5', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agentmux-state-v1-'));
   const path = join(root, 'state.json');
   await writeFile(
@@ -20,9 +20,10 @@ test('state store migrates version 1 state to version 4', async () => {
   const store = new StateStore(path);
   const state = await store.load();
 
-  assert.equal(state.version, 4);
+  assert.equal(state.version, 5);
   assert.deepEqual(state.teams, {});
   assert.deepEqual(state.messages, {});
+  assert.deepEqual(state.delegations, {});
   assert.deepEqual(state.events, []);
   assert.equal(state.nextEventSeq, 1);
 
@@ -30,16 +31,18 @@ test('state store migrates version 1 state to version 4', async () => {
   const persisted = JSON.parse(await readFile(path, 'utf8')) as {
     version: number;
     messages: object;
+    delegations: object;
     events: unknown[];
     nextEventSeq: number;
   };
-  assert.equal(persisted.version, 4);
+  assert.equal(persisted.version, 5);
   assert.deepEqual(persisted.messages, {});
+  assert.deepEqual(persisted.delegations, {});
   assert.deepEqual(persisted.events, []);
   assert.equal(persisted.nextEventSeq, 1);
 });
 
-test('state store migrates version 2 state to version 4', async () => {
+test('state store migrates version 2 state to version 5', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agentmux-state-v2-'));
   const path = join(root, 'state.json');
   await writeFile(
@@ -53,13 +56,13 @@ test('state store migrates version 2 state to version 4', async () => {
   );
 
   const state = await new StateStore(path).load();
-  assert.equal(state.version, 4);
+  assert.equal(state.version, 5);
   assert.deepEqual(state.messages, {});
   assert.deepEqual(state.events, []);
   assert.equal(state.nextEventSeq, 1);
 });
 
-test('state store migrates version 3 state to version 4', async () => {
+test('state store migrates version 3 state to version 5', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agentmux-state-v3-'));
   const path = join(root, 'state.json');
   await writeFile(
@@ -74,9 +77,32 @@ test('state store migrates version 3 state to version 4', async () => {
   );
 
   const state = await new StateStore(path).load();
-  assert.equal(state.version, 4);
+  assert.equal(state.version, 5);
   assert.deepEqual(state.events, []);
   assert.equal(state.nextEventSeq, 1);
+});
+
+test('state store migrates version 4 state to version 5', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-state-v4-'));
+  const path = join(root, 'state.json');
+  await writeFile(
+    path,
+    JSON.stringify({
+      version: 4,
+      agents: {},
+      jobs: {},
+      teams: {},
+      messages: {},
+      events: [{ id: 'evt_00000001', seq: 1, type: 'team.created', createdAt: '2026-01-01T00:00:00.000Z' }],
+      nextEventSeq: 2,
+    }),
+  );
+
+  const state = await new StateStore(path).load();
+  assert.equal(state.version, 5);
+  assert.deepEqual(state.delegations, {});
+  assert.equal(state.events.length, 1);
+  assert.equal(state.nextEventSeq, 2);
 });
 
 test('transactions from independent stores do not lose updates', async () => {

@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import type {
+  AgentDelegation,
   AgentJob,
   AgentSession,
   AgentMessage,
@@ -31,12 +32,23 @@ interface LegacyStateV3 {
   messages: Record<string, AgentMessage>;
 }
 
+interface LegacyStateV4 {
+  version: 4;
+  agents: Record<string, AgentSession>;
+  jobs: Record<string, AgentJob>;
+  teams: Record<string, AgentTeam>;
+  messages: Record<string, AgentMessage>;
+  events: AgentmuxState['events'];
+  nextEventSeq: number;
+}
+
 const EMPTY_STATE: AgentmuxState = {
-  version: 4,
+  version: 5,
   agents: {},
   jobs: {},
   teams: {},
   messages: {},
+  delegations: {},
   events: [],
   nextEventSeq: 1,
 };
@@ -76,15 +88,16 @@ export class StateStore {
     try {
       const value = JSON.parse(
         await readFile(this.path, 'utf8'),
-      ) as AgentmuxState | LegacyStateV1 | LegacyStateV2 | LegacyStateV3;
+      ) as AgentmuxState | LegacyStateV1 | LegacyStateV2 | LegacyStateV3 | LegacyStateV4;
 
       if (value.version === 1 && value.agents && value.jobs) {
         return {
-          version: 4,
+          version: 5,
           agents: value.agents,
           jobs: value.jobs,
           teams: {},
           messages: {},
+          delegations: {},
           events: [],
           nextEventSeq: 1,
         };
@@ -96,11 +109,12 @@ export class StateStore {
         value.teams
       ) {
         return {
-          version: 4,
+          version: 5,
           agents: value.agents,
           jobs: value.jobs,
           teams: value.teams,
           messages: {},
+          delegations: {},
           events: [],
           nextEventSeq: 1,
         };
@@ -113,21 +127,43 @@ export class StateStore {
         value.messages
       ) {
         return {
-          version: 4,
+          version: 5,
           agents: value.agents,
           jobs: value.jobs,
           teams: value.teams,
           messages: value.messages,
+          delegations: {},
           events: [],
           nextEventSeq: 1,
         };
       }
       if (
-        value.version !== 4 ||
+        value.version === 4 &&
+        value.agents &&
+        value.jobs &&
+        value.teams &&
+        value.messages &&
+        Array.isArray(value.events) &&
+        typeof value.nextEventSeq === 'number'
+      ) {
+        return {
+          version: 5,
+          agents: value.agents,
+          jobs: value.jobs,
+          teams: value.teams,
+          messages: value.messages,
+          delegations: {},
+          events: value.events,
+          nextEventSeq: value.nextEventSeq,
+        };
+      }
+      if (
+        value.version !== 5 ||
         !value.agents ||
         !value.jobs ||
         !value.teams ||
         !value.messages ||
+        !value.delegations ||
         !Array.isArray(value.events) ||
         typeof value.nextEventSeq !== 'number'
       ) {
