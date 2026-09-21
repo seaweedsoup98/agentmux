@@ -134,6 +134,8 @@ Typical states:
 
 Codex uses `codex login status`; Claude Code uses `claude auth status`. Antigravity has no documented zero-cost shell auth-status command, so doctor reports its auth as `unknown` rather than consuming quota or opening a browser. A real headless Antigravity run is the authoritative check.
 
+If a provider is missing, doctor prints its official installation command rather than installing software implicitly. Provider installation can modify PATH, shell profiles, or system state, so it remains an explicit user action.
+
 If authentication expires, agentmux does not store or repair provider credentials. Re-authenticate with the provider itself:
 
 ```text
