@@ -214,7 +214,21 @@ Each spawned agent accepts `workspace: shared | worktree | auto`.
 - `worktree` creates a detached Git worktree under `~/.agentmux/worktrees/<agent-id>`.
 - `auto` is the default. Read-only agents share the workspace. A single writable agent normally shares it; parallel writable agents in the same `spawn_many` batch are isolated before they start, and a later writable agent is isolated when another shared writer is already running.
 
-Worktrees are created from Git `HEAD`. To avoid silently dropping local edits, worktree creation refuses a dirty repository; commit/stash first or explicitly choose `shared`. This keeps the normal single-writer workflow simple while making parallel writes explicit and reproducible.
+Worktrees are created from Git `HEAD`, and the exact base commit is recorded on the agent session. To avoid silently dropping local edits, worktree creation refuses a dirty repository; commit/stash first or explicitly choose `shared`.
+
+The control tower can inspect and integrate isolated writable work explicitly:
+
+```text
+workspace_status(agent_id="<agent>")
+workspace_diff(agent_id="<agent>")
+workspace_apply(agent_id="<agent>")
+kill(agent_id="<agent>")
+workspace_cleanup(agent_id="<agent>", force=true)
+```
+
+`workspace_diff` builds one base-relative patch using a temporary Git index, so committed, staged, unstaged, deleted, and untracked files are represented without modifying the agent's real index. `workspace_apply` is external-control-tower only, refuses a dirty base repository, runs `git apply --check`, and never performs an automatic merge. Cleanup requires the session to be stopped; dirty isolated worktrees require an explicit `force=true`.
+
+This keeps parallel writers reproducible while leaving integration authority with the interactive control tower.
 
 ## Access modes
 
@@ -238,7 +252,6 @@ These mappings are intentionally conservative and are not identical security mod
 
 ## Roadmap
 
-- worktree cleanup and merge helpers
 - delegation dependencies / parent-child task graphs
 - push subscriptions / notifications on top of `events_wait`
 - streaming progress and richer tool events
