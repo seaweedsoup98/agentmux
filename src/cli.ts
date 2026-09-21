@@ -36,11 +36,11 @@ export async function runCli(argv: string[]): Promise<number> {
       process.stdout.write(
         JSON.stringify({ providers, hosts }, null, 2) + '\n',
       );
-      return providers.some((item) => item.installed) ? 0 : 1;
+      return 0;
     }
 
     printDoctor(providers, hosts);
-    return providers.some((item) => item.installed) ? 0 : 1;
+    return 0;
   }
 
   if (command === 'setup') {
