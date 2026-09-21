@@ -39,10 +39,12 @@ export async function doctorProviders(): Promise<ProviderHealth[]> {
 }
 
 export async function doctorHosts(
-  providers: ProviderHealth[] = await doctorProviders(),
+  providers?: ProviderHealth[],
+  homeDir = homedir(),
 ): Promise<HostHealth[]> {
+  const resolvedProviders = providers ?? await doctorProviders();
   return Promise.all(
-    providers.map(async (provider) => {
+    resolvedProviders.map(async (provider) => {
       if (!provider.installed) {
         return {
           host: provider.provider,
@@ -51,7 +53,7 @@ export async function doctorHosts(
         };
       }
 
-      const configured = await detectHostConfig(provider.provider);
+      const configured = await detectHostConfig(provider.provider, homeDir);
       return {
         host: provider.provider,
         command: provider.command,
@@ -169,17 +171,15 @@ function loginHint(provider: ProviderName): string {
 
 async function detectHostConfig(
   host: ProviderName,
+  homeDir: string,
 ): Promise<Pick<HostHealth, 'mcpConfigured' | 'pluginConfigured' | 'detail'>> {
   if (host === 'codex') {
-    const [mcp, plugin] = await Promise.all([
-      runCommand('codex', ['mcp', 'list'], { timeoutMs: VERSION_TIMEOUT_MS }),
-      runCommand('codex', ['plugin', 'marketplace', 'list'], {
-        timeoutMs: VERSION_TIMEOUT_MS,
-      }),
-    ]);
+    const mcp = await runCommand('codex', ['mcp', 'list'], {
+      timeoutMs: VERSION_TIMEOUT_MS,
+    });
     return {
       mcpConfigured: /\bagentmux\b/i.test(mcp.stdout + '\n' + mcp.stderr),
-      pluginConfigured: /agentmux/i.test(plugin.stdout + '\n' + plugin.stderr),
+      pluginConfigured: await codexPluginEnabled(homeDir),
     };
   }
 
@@ -194,7 +194,7 @@ async function detectHostConfig(
     };
   }
 
-  const configPath = join(homedir(), '.gemini', 'config', 'mcp_config.json');
+  const configPath = join(homeDir, '.gemini', 'config', 'mcp_config.json');
   let mcpConfigured = false;
   try {
     const parsed = JSON.parse(await readFile(configPath, 'utf8')) as {
@@ -213,4 +213,17 @@ async function detectHostConfig(
     pluginConfigured: /\bagentmux\b/i.test(plugin.stdout + '\n' + plugin.stderr),
     detail: configPath,
   };
+}
+
+
+async function codexPluginEnabled(homeDir: string): Promise<boolean> {
+  const codexHome = process.env.CODEX_HOME ?? join(homeDir, '.codex');
+  try {
+    const config = await readFile(join(codexHome, 'config.toml'), 'utf8');
+    const section =
+      /\[plugins\."agentmux(?:@[^"]+)?"\]([\s\S]*?)(?=\n\[|$)/i.exec(config)?.[1];
+    return Boolean(section && /(?:^|\n)\s*enabled\s*=\s*true\b/i.test(section));
+  } catch {
+    return false;
+  }
 }
