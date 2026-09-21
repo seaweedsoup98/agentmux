@@ -44,12 +44,54 @@ without storing a long-lived npm token.
 
 Use `dry_run=true` first. Set it to false only for an intended release.
 
+## Automatic releases from main
+
+Publishing no longer requires pressing the **Run workflow** button for normal stable releases.
+
+A push to `main` that changes `package.json` automatically runs
+`.github/workflows/publish.yml`. The workflow publishes only when:
+
+- `package.json.version` is a stable `x.y.z` version,
+- that exact version is not already present on npm,
+- the version is newer than the current npm `latest`, and
+- `CHANGELOG.md` contains a matching `## x.y.z` section.
+
+If the current version is already published, the workflow succeeds but skips the
+publish step. Registry/network errors are treated as failures rather than as evidence
+that a version is unpublished.
+
+The manual **Run workflow** entry remains available for dry-run validation or
+exceptional releases.
+
+### Normal release flow
+
+On a release branch:
+
+```bash
+npm version patch --no-git-tag-version
+```
+
+(or use `minor` / `major`), then add the matching changelog section, run
+`npm run check`, and merge the change into `main`.
+
+After the merge:
+
+```text
+package.json version change on main
+  -> Publish npm package workflow
+  -> check/test/build/release validation
+  -> npm registry version check
+  -> npm publish through Trusted Publishing
+```
+
+No workflow button or npm login is required.
+
 ## Version release checklist
 
-1. Update version/changelog.
-2. Run the full CI suite.
-3. Run real-provider E2E for the installed provider set.
-4. Run the publish workflow with `dry_run=true`.
-5. Publish.
+1. Bump `package.json.version`.
+2. Add the matching `CHANGELOG.md` section.
+3. Run the full CI suite.
+4. Run real-provider E2E for the installed provider set when the runtime changed materially.
+5. Merge to `main`; npm publishing starts automatically.
 6. Verify a clean-machine install using the exact npm package name (quote scoped names in PowerShell).
 7. Create the matching GitHub tag/release.
