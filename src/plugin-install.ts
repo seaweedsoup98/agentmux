@@ -143,7 +143,9 @@ async function installOne(
       const plugin = await runCommand(pluginAdd[0]!, pluginAdd.slice(1), {
         timeoutMs: COMMAND_TIMEOUT_MS,
       });
-      assertSuccess(plugin, 'codex plugin add');
+      if (plugin.exitCode !== 0 && !isAlreadyConfigured(plugin)) {
+        assertSuccess(plugin, 'codex plugin add');
+      }
       installed = true;
     }
   } else if (host === 'claude') {
@@ -228,20 +230,24 @@ async function installOne(
         assertSuccess(updated, 'claude plugin update');
       }
 
+      installed = true;
+    }
+
+    if (!options.dryRun) {
       const enabled = await runCommand(
         pluginEnable[0]!,
         pluginEnable.slice(1),
         { timeoutMs: COMMAND_TIMEOUT_MS },
       );
       assertSuccess(enabled, 'claude plugin enable');
-      installed = true;
     }
   } else {
     const bundlePath = fileURLToPath(
       new URL('../plugins/antigravity/', import.meta.url),
     );
     const pluginInstall = ['agy', 'plugin', 'install', bundlePath];
-    commands.push(renderCommand(pluginInstall));
+    const pluginEnable = ['agy', 'plugin', 'enable', 'agentmux'];
+    commands.push(renderCommand(pluginInstall), renderCommand(pluginEnable));
 
     if (!options.dryRun && !pluginConfigured) {
       const plugin = await runCommand(
@@ -251,6 +257,15 @@ async function installOne(
       );
       assertSuccess(plugin, 'agy plugin install');
       installed = true;
+    }
+
+    if (!options.dryRun) {
+      const enabled = await runCommand(
+        pluginEnable[0]!,
+        pluginEnable.slice(1),
+        { timeoutMs: COMMAND_TIMEOUT_MS },
+      );
+      assertSuccess(enabled, 'agy plugin enable');
     }
   }
 
