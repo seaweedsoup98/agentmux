@@ -278,12 +278,14 @@ async function mergeJsonMcpConfig(
 ): Promise<void> {
   let value: Record<string, unknown> = {};
   try {
-    const raw = await readFile(path, 'utf8');
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('Expected a JSON object');
+    const raw = (await readFile(path, 'utf8')).replace(/^\uFEFF/, '');
+    if (raw.trim()) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Expected a JSON object');
+      }
+      value = parsed as Record<string, unknown>;
     }
-    value = parsed as Record<string, unknown>;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw new Error(
