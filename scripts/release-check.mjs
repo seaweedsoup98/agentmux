@@ -42,6 +42,35 @@ if (!changelog.includes('## ' + pkg.version)) {
   );
 }
 
+for (const path of [
+  'plugins/codex/plugin.json',
+  'plugins/codex/.codex-plugin/plugin.json',
+  'plugins/claude/.claude-plugin/plugin.json',
+]) {
+  const manifest = JSON.parse(await readFile(path, 'utf8'));
+  if (manifest.version !== pkg.version) {
+    errors.push(
+      path +
+        ' version must match package.json (' +
+        pkg.version +
+        '), got ' +
+        JSON.stringify(manifest.version) +
+        '.',
+    );
+  }
+}
+
+const claudeMarketplace = JSON.parse(
+  await readFile('.claude-plugin/marketplace.json', 'utf8'),
+);
+if (claudeMarketplace.plugins?.[0]?.version !== pkg.version) {
+  errors.push(
+    '.claude-plugin/marketplace.json plugin version must match package.json (' +
+      pkg.version +
+      ').',
+  );
+}
+
 for (const required of ['dist', 'plugins', '.agents', '.claude-plugin', 'README.md', 'CHANGELOG.md', 'LICENSE']) {
   if (!pkg.files?.includes(required)) {
     errors.push('package files[] is missing ' + JSON.stringify(required) + '.');
