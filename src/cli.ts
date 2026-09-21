@@ -105,7 +105,7 @@ export async function runCli(argv: string[]): Promise<number> {
         'Antigravity: ' + antigravityPath,
         '  agy plugin install ' + JSON.stringify(antigravityPath),
         '',
-        'Plugin MCP bundles launch: npx -y agentmux@latest',
+        'Plugin MCP bundles launch: npx -y @jiho.ko/agentmux@latest',
         'Use direct "agentmux setup" for local development before npm publication.',
         'Do not enable a native plugin and direct MCP registration for the same host unless duplicate tools are intentional.',
         '',
