@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { access, mkdir } from 'node:fs/promises';
-import { dirname, fileURLToPath } from 'node:path';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import net from 'node:net';
 import lockfile from 'proper-lockfile';
 import {
