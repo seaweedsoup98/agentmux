@@ -38,8 +38,9 @@ export async function doctorProviders(): Promise<ProviderHealth[]> {
   );
 }
 
-export async function doctorHosts(): Promise<HostHealth[]> {
-  const providers = await doctorProviders();
+export async function doctorHosts(
+  providers: ProviderHealth[] = await doctorProviders(),
+): Promise<HostHealth[]> {
   return Promise.all(
     providers.map(async (provider) => {
       if (!provider.installed) {
