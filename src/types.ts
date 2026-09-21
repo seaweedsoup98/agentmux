@@ -144,6 +144,35 @@ export interface RunRequest {
   access: AccessMode;
 }
 
+export interface ExecutionOwner {
+  pid: number;
+  instanceId: string;
+  persistent: boolean;
+  mode: 'local' | 'broker';
+}
+
+export interface ExecutionRequest {
+  agentId: string;
+  jobId: string;
+  prompt: string;
+  firstRun: boolean;
+}
+
+export interface ExecutionStatus {
+  mode: 'local' | 'broker';
+  owner: ExecutionOwner;
+  activeJobs: number;
+  endpoint?: string;
+}
+
+export interface ExecutionController {
+  readonly owner: ExecutionOwner;
+  submit(request: ExecutionRequest): Promise<void>;
+  cancel(jobId: string): Promise<void>;
+  status(): Promise<ExecutionStatus>;
+  shutdown(): Promise<void>;
+}
+
 export interface CommandSpec {
   command: string;
   args: string[];
