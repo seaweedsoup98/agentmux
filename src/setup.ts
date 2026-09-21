@@ -128,7 +128,10 @@ export async function resolveRuntimeSpec(): Promise<RuntimeSpec> {
 }
 
 export function parseHostList(raw: string): ProviderName[] {
-  const values = raw.split(',').map((value) => normalizeHost(value.trim())).filter(Boolean);
+  const values = raw
+    .split(/[\s,;]+/)
+    .map((value) => normalizeHost(value.trim()))
+    .filter(Boolean);
   const invalid = values.filter(
     (value) => !(PROVIDERS as readonly string[]).includes(value),
   );
