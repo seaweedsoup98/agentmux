@@ -21,6 +21,8 @@ The MCP server exposes a provider-neutral session API:
 
 - `spawn` / `spawn_many` — create one or many agent sessions and start their jobs asynchronously
 - `send` — continue the same provider-native conversation
+- `whoami` — identify a managed child agent from inherited runtime context
+- `message_send`, `inbox`, `message_ack` — persisted, attributed agent-to-agent messaging
 - `status` — inspect an agent and its latest job
 - `result` / `wait` — fetch results or wait for multiple jobs in one MCP call
 - `list` — list local sessions
@@ -54,7 +56,9 @@ agentmux team
  `- Codex researcher
 ```
 
-A managed agent can also be recorded as the supervisor of another agent. `spawn` accepts `team_id` and `parent_agent_id`, so nested supervision can be represented in the state model without changing provider adapters.
+A managed agent can also supervise children. Provider subprocesses inherit `AGENTMUX_AGENT_ID`, `AGENTMUX_TEAM_ID`, `AGENTMUX_PARENT_AGENT_ID`, and `AGENTMUX_ROLE`. If that coding agent starts its configured agentmux MCP server, `whoami` resolves the inherited identity and nested `spawn` automatically creates children inside the same team.
+
+Managed agents are team-scoped: they can inspect and send work within their team, read only their own inbox, and stop only themselves or descendants. An external Codex/Claude Code/Antigravity UI has no inherited agent ID and remains the unrestricted control tower. This is a coordination boundary, not an OS-level security sandbox.
 
 Multiple agentmux MCP processes on the same machine can share this state safely. State mutations are serialized with an inter-process filesystem lock and committed by atomic replacement, while each job records the process/instance that owns its running provider subprocess. This allows, for example, a Codex host to discover and resume a session originally created from Claude Code.
 
@@ -144,6 +148,27 @@ Use one Codex agent to compare their findings, then report the consensus.
 
 The host remains the control tower. `agentmux` provides the runtime/session layer.
 
+### Agent-to-agent messaging
+
+A managed child can discover itself and its team with `whoami`, then inspect peers with `team_status`.
+
+```text
+message_send(
+  to_agent_id="<peer>",
+  message="I changed the repository interface. Rebase your implementation on it.",
+  wake=false
+)
+```
+
+Messages are persisted before delivery. `wake=false` leaves the message unread in the peer's inbox. `wake=true` additionally resumes the peer's provider-native session when that peer is idle and resumable; if it is busy, the wake fails but the message remains in the inbox.
+
+```text
+inbox(unread_only=true)
+message_ack(message_ids=["msg_..."])
+```
+
+This lets agents communicate without requiring a separate agentmux UI.
+
 ## Workspace isolation
 
 Each spawned agent accepts `workspace: shared | worktree | auto`.
@@ -177,8 +202,8 @@ These mappings are intentionally conservative and are not identical security mod
 ## Roadmap
 
 - worktree cleanup and merge helpers
-- agent-to-agent message routing and inboxes
 - explicit handoff/delegation history across MCP hosts
+- message subscriptions / push notifications instead of inbox polling
 - streaming progress and richer tool events
 - persistent named roles and reusable team templates
 - package publishing and one-command MCP registration
