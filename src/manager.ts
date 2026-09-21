@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { ProcessRunner } from './process.js';
 import { getProvider, listProviders } from './providers.js';
 import { StateStore } from './state.js';
+import { chooseWorkspace, createWorktree } from './workspace.js';
 import type {
   AccessMode,
   AgentJob,
@@ -12,6 +13,7 @@ import type {
   AgentmuxState,
   ProviderName,
   RunRequest,
+  WorkspaceMode,
 } from './types.js';
 
 export interface SpawnOptions {
@@ -25,6 +27,7 @@ export interface SpawnOptions {
   access?: AccessMode;
   teamId?: string;
   parentAgentId?: string;
+  workspace?: WorkspaceMode;
 }
 
 export interface TeamCreateOptions {
@@ -117,11 +120,14 @@ export class AgentManager {
   }
 
   async spawn(options: SpawnOptions): Promise<{ agent: AgentSession; job: AgentJob }> {
-    const cwd = resolve(options.cwd ?? process.cwd());
-    const info = await stat(cwd);
-    if (!info.isDirectory()) throw new Error('cwd is not a directory: ' + cwd);
+    const baseCwd = resolve(options.cwd ?? process.cwd());
+    const info = await stat(baseCwd);
+    if (!info.isDirectory()) throw new Error('cwd is not a directory: ' + baseCwd);
 
     const now = new Date().toISOString();
+    const agentId = this.id('a');
+    const access = options.access ?? 'workspace-write';
+    const requestedWorkspace = options.workspace ?? 'auto';
     let teamId = options.teamId;
     let parent: AgentSession | undefined;
 
@@ -129,13 +135,29 @@ export class AgentManager {
 
     if (options.parentAgentId) {
       parent = this.requireAgent(options.parentAgentId);
-
       if (parent.teamId && teamId && parent.teamId !== teamId) {
         throw new Error('Parent belongs to a different team: ' + parent.teamId);
       }
-
       teamId ??= parent.teamId;
+    }
 
+    const workspace = chooseWorkspace(
+      requestedWorkspace,
+      access,
+      this.hasRunningSharedWriter(baseCwd),
+    );
+    let cwd = baseCwd;
+    let worktreePath: string | undefined;
+    let gitRoot: string | undefined;
+
+    if (workspace === 'worktree') {
+      const worktree = await createWorktree(agentId, baseCwd);
+      cwd = worktree.cwd;
+      worktreePath = worktree.worktreePath;
+      gitRoot = worktree.gitRoot;
+    }
+
+    if (parent) {
       if (!teamId) {
         const team: AgentTeam = {
           id: this.id('t'),
@@ -154,14 +176,19 @@ export class AgentManager {
     }
 
     const agent: AgentSession = {
-      id: this.id('a'),
+      id: agentId,
       name: options.name,
       provider: options.provider,
       cwd,
       model: options.model,
       effort: options.effort,
       role: options.role,
-      access: options.access ?? 'workspace-write',
+      access,
+      baseCwd,
+      requestedWorkspace,
+      workspace,
+      worktreePath,
+      gitRoot,
       teamId,
       parentAgentId: parent?.id,
       status: 'running',
@@ -342,6 +369,19 @@ export class AgentManager {
     }
 
     await this.store.save(this.state);
+  }
+
+  private hasRunningSharedWriter(baseCwd: string): boolean {
+    return Object.values(this.state.agents).some((agent) => {
+      const agentBaseCwd = resolve(agent.baseCwd ?? agent.cwd);
+      const workspace = agent.workspace ?? 'shared';
+      return (
+        agent.status === 'running' &&
+        agent.access !== 'read-only' &&
+        workspace === 'shared' &&
+        agentBaseCwd === baseCwd
+      );
+    });
   }
 
   private newJob(agentId: string, now: string): AgentJob {

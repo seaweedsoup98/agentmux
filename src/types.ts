@@ -4,6 +4,10 @@ export type ProviderName = (typeof PROVIDERS)[number];
 export const ACCESS_MODES = ['read-only', 'workspace-write', 'full'] as const;
 export type AccessMode = (typeof ACCESS_MODES)[number];
 
+export const WORKSPACE_MODES = ['shared', 'worktree', 'auto'] as const;
+export type WorkspaceMode = (typeof WORKSPACE_MODES)[number];
+export type ResolvedWorkspaceMode = Exclude<WorkspaceMode, 'auto'>;
+
 export type AgentStatus = 'idle' | 'running' | 'stopped' | 'error';
 export type JobStatus = 'running' | 'succeeded' | 'failed' | 'canceled';
 
@@ -25,6 +29,11 @@ export interface AgentSession {
   effort?: string;
   role?: string;
   access: AccessMode;
+  baseCwd?: string;
+  requestedWorkspace?: WorkspaceMode;
+  workspace?: ResolvedWorkspaceMode;
+  worktreePath?: string;
+  gitRoot?: string;
   teamId?: string;
   parentAgentId?: string;
   status: AgentStatus;

@@ -11,11 +11,15 @@ interface LegacyStateV1 {
 
 const EMPTY_STATE: AgentmuxState = { version: 2, agents: {}, jobs: {}, teams: {} };
 
+export function agentmuxHome(): string {
+  return process.env.AGENTMUX_HOME ?? join(homedir(), '.agentmux');
+}
+
 export class StateStore {
   readonly path: string;
   private writeQueue: Promise<void> = Promise.resolve();
 
-  constructor(path = join(process.env.AGENTMUX_HOME ?? join(homedir(), '.agentmux'), 'state.json')) {
+  constructor(path = join(agentmuxHome(), 'state.json')) {
     this.path = path;
   }
 

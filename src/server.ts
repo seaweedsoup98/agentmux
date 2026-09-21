@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { doctorProviders } from './doctor.js';
 import { AgentManager } from './manager.js';
-import { ACCESS_MODES, PROVIDERS } from './types.js';
+import { ACCESS_MODES, PROVIDERS, WORKSPACE_MODES } from './types.js';
 
 function text(value: unknown) {
   return {
@@ -35,6 +35,7 @@ export function buildServer(manager: AgentManager): McpServer {
         model: z.string().min(1).optional(),
         effort: z.string().min(1).optional(),
         access: z.enum(ACCESS_MODES).default('workspace-write'),
+        workspace: z.enum(WORKSPACE_MODES).default('auto'),
         team_id: z.string().min(1).optional(),
         parent_agent_id: z.string().min(1).optional(),
       }),

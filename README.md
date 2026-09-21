@@ -90,6 +90,16 @@ Use one Codex agent to compare their findings, then report the consensus.
 
 The host remains the control tower. `agentmux` provides the runtime/session layer.
 
+## Workspace isolation
+
+Each spawned agent accepts `workspace: shared | worktree | auto`.
+
+- `shared` uses the requested working directory directly.
+- `worktree` creates a detached Git worktree under `~/.agentmux/worktrees/<agent-id>`.
+- `auto` is the default. Read-only agents share the workspace. A writable agent gets a worktree only when another writable shared agent is already running against the same base directory.
+
+This keeps the normal single-writer workflow simple while isolating concurrent writers.
+
 ## Access modes
 
 `spawn` accepts a provider-neutral access mode. Adapters map it to the nearest native behavior:
@@ -107,12 +117,12 @@ These mappings are intentionally conservative and are not identical security mod
 1. Keep the existing Codex, Claude Code, or other MCP-host UI.
 2. Treat main vs subagent as a session relationship, not a model property.
 3. Preserve native provider sessions instead of flattening everything into stateless API calls.
-4. Make workspace isolation optional; shared workspace is the simple default.
+4. Make workspace isolation optional; `auto` only isolates concurrent writers.
 5. Keep the core small. Worktrees, messaging policy, and richer supervision sit above provider adapters.
 
 ## Roadmap
 
-- optional Git worktree isolation
+- worktree cleanup and merge helpers
 - agent-to-agent message routing and inboxes
 - streaming progress and richer tool events
 - persistent named roles and reusable team templates
