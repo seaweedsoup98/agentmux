@@ -12,7 +12,8 @@
     ".agents",
     ".claude-plugin",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20"
