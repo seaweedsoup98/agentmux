@@ -11,7 +11,7 @@ export class ProcessRunner {
     return new Promise((resolve, reject) => {
       const child = spawn(spec.command, spec.args, {
         cwd: spec.cwd,
-        env: process.env,
+        env: spec.env ?? process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       const stdoutStream = child.stdout;

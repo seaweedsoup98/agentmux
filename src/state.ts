@@ -2,7 +2,12 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import lockfile from 'proper-lockfile';
-import type { AgentJob, AgentSession, AgentmuxState } from './types.js';
+import type {
+  AgentJob,
+  AgentSession,
+  AgentTeam,
+  AgentmuxState,
+} from './types.js';
 
 interface LegacyStateV1 {
   version: 1;
@@ -10,7 +15,20 @@ interface LegacyStateV1 {
   jobs: Record<string, AgentJob>;
 }
 
-const EMPTY_STATE: AgentmuxState = { version: 2, agents: {}, jobs: {}, teams: {} };
+interface LegacyStateV2 {
+  version: 2;
+  agents: Record<string, AgentSession>;
+  jobs: Record<string, AgentJob>;
+  teams: Record<string, AgentTeam>;
+}
+
+const EMPTY_STATE: AgentmuxState = {
+  version: 3,
+  agents: {},
+  jobs: {},
+  teams: {},
+  messages: {},
+};
 
 export function agentmuxHome(): string {
   return process.env.AGENTMUX_HOME ?? join(homedir(), '.agentmux');
@@ -47,12 +65,38 @@ export class StateStore {
     try {
       const value = JSON.parse(
         await readFile(this.path, 'utf8'),
-      ) as AgentmuxState | LegacyStateV1;
+      ) as AgentmuxState | LegacyStateV1 | LegacyStateV2;
 
       if (value.version === 1 && value.agents && value.jobs) {
-        return { version: 2, agents: value.agents, jobs: value.jobs, teams: {} };
+        return {
+          version: 3,
+          agents: value.agents,
+          jobs: value.jobs,
+          teams: {},
+          messages: {},
+        };
       }
-      if (value.version !== 2 || !value.agents || !value.jobs || !value.teams) {
+      if (
+        value.version === 2 &&
+        value.agents &&
+        value.jobs &&
+        value.teams
+      ) {
+        return {
+          version: 3,
+          agents: value.agents,
+          jobs: value.jobs,
+          teams: value.teams,
+          messages: {},
+        };
+      }
+      if (
+        value.version !== 3 ||
+        !value.agents ||
+        !value.jobs ||
+        !value.teams ||
+        !value.messages
+      ) {
         throw new Error('Unsupported state format');
       }
       return value;

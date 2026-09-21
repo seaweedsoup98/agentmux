@@ -24,18 +24,30 @@ export function buildServer(manager: AgentManager): McpServer {
     {
       instructions:
         'Use agentmux as a delegation runtime while the current MCP host remains the default supervisor. ' +
-        'Use doctor when provider availability is unknown. Prefer spawn_many for independent parallel tasks ' +
-        'and wait instead of tight result polling. Use read-only access for analysis/review unless edits are needed. ' +
-        'Keep workspace=auto unless explicit isolation is required; auto only isolates concurrent writable shared agents. ' +
-        'Use teams to record supervision. Do not use full access or nested delegation unless the task requires it.',
+        'Managed child agents should call whoami to discover their identity and team. Prefer message_send for attributed ' +
+        'agent-to-agent communication; wake=true starts a new turn only when the recipient is idle and resumable. ' +
+        'When a managed agent wakes a peer and needs that work to finish, it should wait for the returned wakeJob before ending its own turn. ' +
+        'Use inbox/message_ack for persisted messages. Prefer spawn_many for independent parallel tasks and wait instead ' +
+        'of tight result polling. Use read-only access for analysis/review unless edits are needed. Keep workspace=auto ' +
+        'unless explicit isolation is required. Do not use full access unless the task requires it.',
     },
+  );
+
+  server.registerTool(
+    'whoami',
+    {
+      description:
+        'Return the managed agent identity inherited by this MCP process, or managed=false for an external control-tower host.',
+      inputSchema: z.object({}),
+    },
+    async () => text(await manager.whoami()),
   );
 
   server.registerTool(
     'spawn',
     {
       description:
-        'Spawn a Codex, Claude Code, or Antigravity coding-agent session and start its first job asynchronously.',
+        'Spawn a coding-agent session and start its first job asynchronously. Managed callers automatically create children in their own team.',
       inputSchema: z.object({
         provider: z.enum(PROVIDERS),
         prompt: z.string().min(1),
@@ -59,25 +71,6 @@ export function buildServer(manager: AgentManager): McpServer {
             parentAgentId: parent_agent_id,
           }),
         );
-      } catch (error) {
-        return failure(error);
-      }
-    },
-  );
-
-  server.registerTool(
-    'send',
-    {
-      description:
-        'Send a follow-up prompt to an existing idle agent using its provider-native session ID.',
-      inputSchema: z.object({
-        agent_id: z.string().min(1),
-        prompt: z.string().min(1),
-      }),
-    },
-    async ({ agent_id, prompt }) => {
-      try {
-        return text(await manager.send(agent_id, prompt));
       } catch (error) {
         return failure(error);
       }
@@ -128,6 +121,88 @@ export function buildServer(manager: AgentManager): McpServer {
   );
 
   server.registerTool(
+    'send',
+    {
+      description:
+        'Continue an existing idle provider-native session. Managed callers are limited to their team.',
+      inputSchema: z.object({
+        agent_id: z.string().min(1),
+        prompt: z.string().min(1),
+      }),
+    },
+    async ({ agent_id, prompt }) => {
+      try {
+        return text(await manager.send(agent_id, prompt));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'message_send',
+    {
+      description:
+        'Persist an attributed message to another agent. With wake=true, also start a new turn if the recipient is idle and resumable.',
+      inputSchema: z.object({
+        to_agent_id: z.string().min(1),
+        message: z.string().min(1).max(65_536),
+        wake: z.boolean().default(false),
+      }),
+    },
+    async ({ to_agent_id, message, wake }) => {
+      try {
+        return text(await manager.messageSend(to_agent_id, message, wake));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'inbox',
+    {
+      description:
+        'Read persisted messages. Managed agents can only read their own inbox; external supervisors must specify agent_id.',
+      inputSchema: z.object({
+        agent_id: z.string().min(1).optional(),
+        unread_only: z.boolean().default(true),
+        mark_read: z.boolean().default(false),
+      }),
+    },
+    async ({ agent_id, unread_only, mark_read }) => {
+      try {
+        return text(
+          await manager.inbox({
+            agentId: agent_id,
+            unreadOnly: unread_only,
+            markRead: mark_read,
+          }),
+        );
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'message_ack',
+    {
+      description: 'Mark one or more inbox messages as read.',
+      inputSchema: z.object({
+        message_ids: z.array(z.string().min(1)).min(1).max(100),
+      }),
+    },
+    async ({ message_ids }) => {
+      try {
+        return text(await manager.acknowledgeMessages(message_ids));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
     'wait',
     {
       description:
@@ -149,7 +224,7 @@ export function buildServer(manager: AgentManager): McpServer {
   server.registerTool(
     'status',
     {
-      description: 'Get one agent and its latest job.',
+      description: 'Get one accessible agent and its latest job.',
       inputSchema: z.object({ agent_id: z.string().min(1) }),
     },
     async ({ agent_id }) => {
@@ -164,7 +239,7 @@ export function buildServer(manager: AgentManager): McpServer {
   server.registerTool(
     'result',
     {
-      description: 'Get a job result by job ID.',
+      description: 'Get an accessible job result by job ID.',
       inputSchema: z.object({ job_id: z.string().min(1) }),
     },
     async ({ job_id }) => {
@@ -179,7 +254,8 @@ export function buildServer(manager: AgentManager): McpServer {
   server.registerTool(
     'list',
     {
-      description: 'List agentmux sessions known to this local state store.',
+      description:
+        'List visible sessions. Managed agents see only their team; external supervisors see all sessions.',
       inputSchema: z.object({}),
     },
     async () => text(await manager.list()),
@@ -188,7 +264,8 @@ export function buildServer(manager: AgentManager): McpServer {
   server.registerTool(
     'kill',
     {
-      description: 'Cancel an active job if present and stop the agentmux session.',
+      description:
+        'Cancel an active job and stop a session. Managed callers may stop only themselves or their descendants.',
       inputSchema: z.object({ agent_id: z.string().min(1) }),
     },
     async ({ agent_id }) => {
@@ -204,7 +281,7 @@ export function buildServer(manager: AgentManager): McpServer {
     'team_create',
     {
       description:
-        'Create a logical agent team. Omit supervisor_agent_id when the interactive MCP host is the supervisor.',
+        'Create a top-level logical team. This tool is available to external control-tower hosts.',
       inputSchema: z.object({
         name: z.string().min(1).max(80).optional(),
         supervisor_agent_id: z.string().min(1).optional(),
@@ -227,7 +304,8 @@ export function buildServer(manager: AgentManager): McpServer {
   server.registerTool(
     'team_status',
     {
-      description: 'Get a team and all agentmux-managed members.',
+      description:
+        'Get a team and its members. Managed agents are limited to their own team.',
       inputSchema: z.object({ team_id: z.string().min(1) }),
     },
     async ({ team_id }) => {
@@ -242,7 +320,8 @@ export function buildServer(manager: AgentManager): McpServer {
   server.registerTool(
     'team_list',
     {
-      description: 'List logical agent teams.',
+      description:
+        'List visible teams. Managed agents see their own team; external supervisors see all teams.',
       inputSchema: z.object({}),
     },
     async () => text(await manager.teams()),

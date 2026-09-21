@@ -8,6 +8,7 @@ import { chooseWorkspace, createWorktree } from './workspace.js';
 import type {
   AccessMode,
   AgentJob,
+  AgentMessage,
   AgentSession,
   AgentTeam,
   AgentmuxState,
@@ -35,6 +36,12 @@ export interface TeamCreateOptions {
   supervisorAgentId?: string;
 }
 
+export interface InboxOptions {
+  agentId?: string;
+  unreadOnly?: boolean;
+  markRead?: boolean;
+}
+
 type SpawnManyResult =
   | { ok: true; agent: AgentSession; job: AgentJob }
   | { ok: false; index: number; error: string };
@@ -44,9 +51,13 @@ export class AgentManager {
     private readonly store: StateStore,
     private readonly runner: ProcessRunner,
     private readonly instanceId: string,
+    private readonly callerAgentId?: string,
   ) {}
 
-  static async create(store = new StateStore()): Promise<AgentManager> {
+  static async create(
+    store = new StateStore(),
+    callerAgentId = process.env.AGENTMUX_AGENT_ID || undefined,
+  ): Promise<AgentManager> {
     const instanceId = 'm_' + randomUUID().replaceAll('-', '').slice(0, 12);
     const now = new Date().toISOString();
 
@@ -83,16 +94,46 @@ export class AgentManager {
           ? undefined
           : 'Running state had no live job after recovery';
       }
+
+      if (callerAgentId && !state.agents[callerAgentId]) {
+        throw new Error('Unknown AGENTMUX_AGENT_ID: ' + callerAgentId);
+      }
     });
 
-    return new AgentManager(store, new ProcessRunner(), instanceId);
+    return new AgentManager(
+      store,
+      new ProcessRunner(),
+      instanceId,
+      callerAgentId,
+    );
   }
 
   providers() {
     return listProviders();
   }
 
+  async whoami(): Promise<
+    | { managed: false }
+    | { managed: true; agent: AgentSession; team?: AgentTeam }
+  > {
+    if (!this.callerAgentId) return { managed: false };
+
+    const state = await this.store.load();
+    const agent = this.requireAgent(state, this.callerAgentId);
+    return {
+      managed: true,
+      agent: structuredClone(agent),
+      team: agent.teamId
+        ? structuredClone(this.requireTeam(state, agent.teamId))
+        : undefined,
+    };
+  }
+
   async createTeam(options: TeamCreateOptions = {}): Promise<AgentTeam> {
+    if (this.callerAgentId) {
+      throw new Error('Managed agents cannot create top-level teams directly');
+    }
+
     return this.store.transaction((state) => {
       const now = new Date().toISOString();
       let supervisor: AgentSession | undefined;
@@ -126,6 +167,7 @@ export class AgentManager {
     teamId: string,
   ): Promise<{ team: AgentTeam; members: AgentSession[] }> {
     const state = await this.store.load();
+    this.assertCallerCanAccessTeam(state, teamId);
     const team = this.requireTeam(state, teamId);
     const members = Object.values(state.agents)
       .filter((agent) => agent.teamId === teamId)
@@ -137,6 +179,12 @@ export class AgentManager {
 
   async teams(): Promise<AgentTeam[]> {
     const state = await this.store.load();
+    const caller = this.caller(state);
+    if (caller) {
+      if (!caller.teamId) return [];
+      return [structuredClone(this.requireTeam(state, caller.teamId))];
+    }
+
     return Object.values(state.teams)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((team) => structuredClone(team));
@@ -152,13 +200,29 @@ export class AgentManager {
       const agentId = this.id('a');
       const access = options.access ?? 'workspace-write';
       const requestedWorkspace = options.workspace ?? 'auto';
+      const caller = this.caller(state);
       let teamId = options.teamId;
+      let parentAgentId = options.parentAgentId;
       let parent: AgentSession | undefined;
+
+      if (caller) {
+        if (options.parentAgentId && options.parentAgentId !== caller.id) {
+          throw new Error('Managed agents can only spawn their own children');
+        }
+        if (
+          options.teamId &&
+          (!caller.teamId || options.teamId !== caller.teamId)
+        ) {
+          throw new Error('Managed agents can only spawn inside their own team');
+        }
+        parentAgentId = caller.id;
+        teamId = caller.teamId;
+      }
 
       if (teamId) this.requireTeam(state, teamId);
 
-      if (options.parentAgentId) {
-        parent = this.requireAgent(state, options.parentAgentId);
+      if (parentAgentId) {
+        parent = this.requireAgent(state, parentAgentId);
         if (parent.teamId && teamId && parent.teamId !== teamId) {
           throw new Error('Parent belongs to a different team: ' + parent.teamId);
         }
@@ -266,6 +330,8 @@ export class AgentManager {
   async send(agentId: string, prompt: string): Promise<AgentJob> {
     const job = await this.store.transaction((state) => {
       const agent = this.requireAgent(state, agentId);
+      this.assertCallerCanAccessAgent(state, agent);
+
       if (agent.status === 'running') {
         throw new Error('Agent already has a running job: ' + agent.activeJobId);
       }
@@ -291,11 +357,111 @@ export class AgentManager {
     return job;
   }
 
+  async messageSend(
+    toAgentId: string,
+    body: string,
+    wake = false,
+  ): Promise<{
+    message: AgentMessage;
+    wakeJob?: AgentJob;
+    wakeError?: string;
+  }> {
+    let message = await this.store.transaction((state) => {
+      const target = this.requireAgent(state, toAgentId);
+      this.assertCallerCanAccessAgent(state, target);
+      const caller = this.caller(state);
+      const now = new Date().toISOString();
+      const next: AgentMessage = {
+        id: this.id('msg'),
+        teamId: target.teamId ?? caller?.teamId,
+        fromAgentId: caller?.id,
+        toAgentId: target.id,
+        body,
+        createdAt: now,
+      };
+      state.messages[next.id] = next;
+      return structuredClone(next);
+    });
+
+    if (!wake) return { message };
+
+    try {
+      const sender = message.fromAgentId ?? 'external supervisor';
+      const wakeJob = await this.send(
+        toAgentId,
+        '[agentmux message ' +
+          message.id +
+          ' from ' +
+          sender +
+          ']\n' +
+          body,
+      );
+      message = await this.store.transaction((state) => {
+        const stored = state.messages[message.id];
+        if (!stored) throw new Error('Message disappeared: ' + message.id);
+        const now = new Date().toISOString();
+        stored.wokenAt = now;
+        stored.wakeJobId = wakeJob.id;
+        stored.readAt ??= now;
+        return structuredClone(stored);
+      });
+      return { message, wakeJob };
+    } catch (error) {
+      return {
+        message,
+        wakeError: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async inbox(options: InboxOptions = {}): Promise<AgentMessage[]> {
+    const unreadOnly = options.unreadOnly ?? true;
+    const markRead = options.markRead ?? false;
+
+    if (markRead) {
+      return this.store.transaction((state) => {
+        const target = this.resolveInboxTarget(state, options.agentId);
+        const messages = this.selectInbox(state, target.id, unreadOnly);
+        const now = new Date().toISOString();
+        for (const message of messages) {
+          state.messages[message.id].readAt ??= now;
+        }
+        return messages.map((message) =>
+          structuredClone(state.messages[message.id]),
+        );
+      });
+    }
+
+    const state = await this.store.load();
+    const target = this.resolveInboxTarget(state, options.agentId);
+    return this.selectInbox(state, target.id, unreadOnly).map((message) =>
+      structuredClone(message),
+    );
+  }
+
+  async acknowledgeMessages(messageIds: string[]): Promise<AgentMessage[]> {
+    return this.store.transaction((state) => {
+      const caller = this.caller(state);
+      const now = new Date().toISOString();
+      const messages = messageIds.map((messageId) => {
+        const message = state.messages[messageId];
+        if (!message) throw new Error('Unknown message: ' + messageId);
+        if (caller && message.toAgentId !== caller.id) {
+          throw new Error('Managed agents can only acknowledge their own inbox');
+        }
+        message.readAt ??= now;
+        return structuredClone(message);
+      });
+      return messages;
+    });
+  }
+
   async status(
     agentId: string,
   ): Promise<{ agent: AgentSession; latestJob?: AgentJob }> {
     const state = await this.store.load();
     const agent = this.requireAgent(state, agentId);
+    this.assertCallerCanAccessAgent(state, agent);
     return {
       agent: structuredClone(agent),
       latestJob: agent.latestJobId
@@ -308,6 +474,8 @@ export class AgentManager {
     const state = await this.store.load();
     const job = state.jobs[jobId];
     if (!job) throw new Error('Unknown job: ' + jobId);
+    const agent = this.requireAgent(state, job.agentId);
+    this.assertCallerCanAccessAgent(state, agent);
     return structuredClone(job);
   }
 
@@ -324,6 +492,8 @@ export class AgentManager {
       const jobs = ids.map((jobId) => {
         const job = state.jobs[jobId];
         if (!job) throw new Error('Unknown job: ' + jobId);
+        const agent = this.requireAgent(state, job.agentId);
+        this.assertCallerCanAccessAgent(state, agent);
         return structuredClone(job);
       });
 
@@ -371,7 +541,13 @@ export class AgentManager {
 
   async list(): Promise<AgentSession[]> {
     const state = await this.store.load();
+    const caller = this.caller(state);
     return Object.values(state.agents)
+      .filter((agent) => {
+        if (!caller) return true;
+        if (!caller.teamId) return agent.id === caller.id;
+        return agent.teamId === caller.teamId;
+      })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((agent) => structuredClone(agent));
   }
@@ -379,6 +555,7 @@ export class AgentManager {
   async kill(agentId: string): Promise<AgentSession> {
     const { agent, jobId } = await this.store.transaction((state) => {
       const target = this.requireAgent(state, agentId);
+      this.assertCallerCanControlAgent(state, target);
       const now = new Date().toISOString();
       const activeJobId = target.activeJobId;
 
@@ -453,6 +630,8 @@ export class AgentManager {
       const command = firstRun
         ? provider.start(request)
         : provider.resume(request, prepared.nativeSessionId as string);
+      command.env = this.agentEnvironment(prepared);
+
       const processResult = await this.runner.run(jobId, command);
       const parsed = provider.parse(processResult.stdout);
 
@@ -544,6 +723,99 @@ export class AgentManager {
         agentBaseCwd === baseCwd
       );
     });
+  }
+
+  private caller(state: AgentmuxState): AgentSession | undefined {
+    if (!this.callerAgentId) return undefined;
+    return this.requireAgent(state, this.callerAgentId);
+  }
+
+  private assertCallerCanAccessAgent(
+    state: AgentmuxState,
+    target: AgentSession,
+  ): void {
+    const caller = this.caller(state);
+    if (!caller || caller.id === target.id) return;
+
+    if (!caller.teamId || caller.teamId !== target.teamId) {
+      throw new Error('Managed agents can only access agents in their own team');
+    }
+  }
+
+  private assertCallerCanAccessTeam(
+    state: AgentmuxState,
+    teamId: string,
+  ): void {
+    const caller = this.caller(state);
+    if (!caller) return;
+    if (!caller.teamId || caller.teamId !== teamId) {
+      throw new Error('Managed agents can only access their own team');
+    }
+  }
+
+  private assertCallerCanControlAgent(
+    state: AgentmuxState,
+    target: AgentSession,
+  ): void {
+    const caller = this.caller(state);
+    if (!caller || caller.id === target.id) return;
+
+    let current: AgentSession | undefined = target;
+    const visited = new Set<string>();
+    while (current?.parentAgentId && !visited.has(current.id)) {
+      visited.add(current.id);
+      if (current.parentAgentId === caller.id) return;
+      current = state.agents[current.parentAgentId];
+    }
+
+    throw new Error('Managed agents can only stop themselves or their descendants');
+  }
+
+  private resolveInboxTarget(
+    state: AgentmuxState,
+    requestedAgentId?: string,
+  ): AgentSession {
+    const caller = this.caller(state);
+    if (caller) {
+      if (requestedAgentId && requestedAgentId !== caller.id) {
+        throw new Error('Managed agents can only read their own inbox');
+      }
+      return caller;
+    }
+
+    if (!requestedAgentId) {
+      throw new Error('External supervisors must specify agent_id for inbox');
+    }
+    return this.requireAgent(state, requestedAgentId);
+  }
+
+  private selectInbox(
+    state: AgentmuxState,
+    agentId: string,
+    unreadOnly: boolean,
+  ): AgentMessage[] {
+    return Object.values(state.messages)
+      .filter(
+        (message) =>
+          message.toAgentId === agentId && (!unreadOnly || !message.readAt),
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  private agentEnvironment(agent: AgentSession): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.AGENTMUX_AGENT_ID;
+    delete env.AGENTMUX_TEAM_ID;
+    delete env.AGENTMUX_PARENT_AGENT_ID;
+    delete env.AGENTMUX_ROLE;
+
+    env.AGENTMUX_AGENT_ID = agent.id;
+    if (agent.teamId) env.AGENTMUX_TEAM_ID = agent.teamId;
+    if (agent.parentAgentId) {
+      env.AGENTMUX_PARENT_AGENT_ID = agent.parentAgentId;
+    }
+    if (agent.role) env.AGENTMUX_ROLE = agent.role;
+    return env;
   }
 
   private newJob(agentId: string, now: string): AgentJob {
