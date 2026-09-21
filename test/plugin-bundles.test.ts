@@ -28,6 +28,7 @@ test('native plugin marketplaces point at bundled agentmux plugins', async () =>
 
 test('all native plugin bundles launch the published agentmux package', async () => {
   const paths = [
+    join('plugins', 'codex', 'mcp.json'),
     join('plugins', 'codex', '.mcp.json'),
     join('plugins', 'claude', '.mcp.json'),
     join('plugins', 'antigravity', 'mcp_config.json'),
@@ -41,10 +42,18 @@ test('all native plugin bundles launch the published agentmux package', async ()
     >;
     assert.equal(servers.agentmux?.command, 'npx');
     assert.deepEqual(servers.agentmux?.args, ['-y', 'agentmux@latest']);
+    if (path.endsWith(join('codex', 'mcp.json'))) {
+      assert.equal(servers.agentmux?.type, 'stdio');
+      assert.equal(
+        value.$schema,
+        'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json',
+      );
+    }
   }
 });
 
 test('plugin manifests keep the integration surface intentionally small', async () => {
+  const portableCodex = await json(join('plugins', 'codex', 'plugin.json'));
   const codex = await json(
     join('plugins', 'codex', '.codex-plugin', 'plugin.json'),
   );
@@ -55,6 +64,11 @@ test('plugin manifests keep the integration surface intentionally small', async 
     join('plugins', 'antigravity', 'plugin.json'),
   );
 
+  assert.equal(
+    portableCodex.$schema,
+    'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
+  );
+  assert.equal(portableCodex.name, 'agentmux');
   assert.equal(codex.name, 'agentmux');
   assert.equal(codex.mcpServers, './.mcp.json');
   assert.equal(claude.name, 'agentmux');
