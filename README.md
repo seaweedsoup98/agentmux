@@ -2,7 +2,7 @@
 
 Use any coding agent as a subagent of another — across Codex, Claude Code, Gemini, and more.
 
-> Early alpha. The first goal is a small MCP runtime, not another multi-agent UI.
+> Early alpha. The goal is a small orchestration runtime, not another multi-agent UI.
 
 `agentmux` lets you keep using the coding-agent interface you already like and delegate work to other installed coding-agent CLIs through one MCP server.
 
@@ -17,7 +17,7 @@ Codex / Claude Code / any MCP host
 
 ## Current scope
 
-The MVP exposes a provider-neutral session API:
+The MCP server exposes a provider-neutral session API:
 
 - `spawn` — create an agent session and start its first job asynchronously
 - `send` — continue the same provider-native conversation
@@ -25,7 +25,9 @@ The MVP exposes a provider-neutral session API:
 - `result` — fetch a job result
 - `list` — list local sessions
 - `kill` — cancel an active job and stop the session
-- `providers` — show configured runtime adapters
+- `team_create`, `team_status`, `team_list` — group sessions and record supervision
+- `providers` — show runtime adapters
+- `doctor` — detect installed provider CLIs and versions
 
 Provider sessions are preserved using their native IDs:
 
@@ -34,6 +36,25 @@ Provider sessions are preserved using their native IDs:
 | Codex | `codex exec --json` | `thread_id` |
 | Claude Code | `claude -p --output-format json` | `session_id` |
 | Antigravity | `agy -p --output-format json` | `conversation_id` |
+
+## Main vs subagent
+
+`agentmux` does not hard-code one model as the main agent.
+
+When a team has no `supervisorAgentId`, the interactive MCP host is the control tower:
+
+```text
+You
+ |
+Codex UI                 <- external supervisor
+ |
+agentmux team
+ |- Claude reviewer
+ |- Antigravity implementer
+ `- Codex researcher
+```
+
+A managed agent can also be recorded as the supervisor of another agent. `spawn` accepts `team_id` and `parent_agent_id`, so nested supervision can be represented without changing provider adapters.
 
 ## Requirements
 
@@ -46,8 +67,7 @@ Provider sessions are preserved using their native IDs:
 git clone https://github.com/seaweedsoup98/agentmux.git
 cd agentmux
 npm install
-npm test
-npm run build
+npm run check
 ```
 
 Run the MCP server over stdio:
@@ -63,11 +83,12 @@ The server stores local session metadata in `~/.agentmux/state.json`. Override t
 Once the MCP server is registered in your host, you can ask the host agent naturally:
 
 ```text
+Create a team for this task.
 Spawn two Antigravity agents to review this repository independently.
 Use one Codex agent to compare their findings, then report the consensus.
 ```
 
-The host remains the control tower. `agentmux` only provides the runtime/session layer.
+The host remains the control tower. `agentmux` provides the runtime/session layer.
 
 ## Access modes
 
@@ -87,15 +108,14 @@ These mappings are intentionally conservative and are not identical security mod
 2. Treat main vs subagent as a session relationship, not a model property.
 3. Preserve native provider sessions instead of flattening everything into stateless API calls.
 4. Make workspace isolation optional; shared workspace is the simple default.
-5. Keep the core small. Worktrees, agent-to-agent messaging, policy, and richer supervision belong above the provider adapters.
+5. Keep the core small. Worktrees, messaging policy, and richer supervision sit above provider adapters.
 
 ## Roadmap
 
-- provider availability / `doctor` checks
 - optional Git worktree isolation
-- agent-to-agent message bus and delegation relationships
+- agent-to-agent message routing and inboxes
 - streaming progress and richer tool events
-- persistent teams and named roles
+- persistent named roles and reusable team templates
 - package publishing and one-command MCP registration
 
 ## License

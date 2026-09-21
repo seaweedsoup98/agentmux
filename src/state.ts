@@ -1,9 +1,15 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { AgentmuxState } from './types.js';
+import type { AgentJob, AgentSession, AgentmuxState } from './types.js';
 
-const EMPTY_STATE: AgentmuxState = { version: 1, agents: {}, jobs: {} };
+interface LegacyStateV1 {
+  version: 1;
+  agents: Record<string, AgentSession>;
+  jobs: Record<string, AgentJob>;
+}
+
+const EMPTY_STATE: AgentmuxState = { version: 2, agents: {}, jobs: {}, teams: {} };
 
 export class StateStore {
   readonly path: string;
@@ -15,8 +21,11 @@ export class StateStore {
 
   async load(): Promise<AgentmuxState> {
     try {
-      const value = JSON.parse(await readFile(this.path, 'utf8')) as AgentmuxState;
-      if (value.version !== 1 || !value.agents || !value.jobs) {
+      const value = JSON.parse(await readFile(this.path, 'utf8')) as AgentmuxState | LegacyStateV1;
+      if (value.version === 1 && value.agents && value.jobs) {
+        return { version: 2, agents: value.agents, jobs: value.jobs, teams: {} };
+      }
+      if (value.version !== 2 || !value.agents || !value.jobs || !value.teams) {
         throw new Error('Unsupported state format');
       }
       return value;

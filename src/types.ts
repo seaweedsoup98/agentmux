@@ -7,6 +7,14 @@ export type AccessMode = (typeof ACCESS_MODES)[number];
 export type AgentStatus = 'idle' | 'running' | 'stopped' | 'error';
 export type JobStatus = 'running' | 'succeeded' | 'failed' | 'canceled';
 
+export interface AgentTeam {
+  id: string;
+  name?: string;
+  supervisorAgentId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AgentSession {
   id: string;
   name?: string;
@@ -17,6 +25,8 @@ export interface AgentSession {
   effort?: string;
   role?: string;
   access: AccessMode;
+  teamId?: string;
+  parentAgentId?: string;
   status: AgentStatus;
   activeJobId?: string;
   latestJobId?: string;
@@ -39,9 +49,10 @@ export interface AgentJob {
 }
 
 export interface AgentmuxState {
-  version: 1;
+  version: 2;
   agents: Record<string, AgentSession>;
   jobs: Record<string, AgentJob>;
+  teams: Record<string, AgentTeam>;
 }
 
 export interface RunRequest {

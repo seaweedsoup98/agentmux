@@ -1,0 +1,83 @@
+import assert from 'node:assert/strict';
+import { chmod, mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { delimiter, join } from 'node:path';
+import test from 'node:test';
+import { AgentManager } from '../src/manager.js';
+import { StateStore } from '../src/state.js';
+
+async function waitForJob(
+  manager: AgentManager,
+  jobId: string,
+  timeoutMs = 3000,
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const job = manager.result(jobId);
+    if (job.status !== 'running') return job;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('Timed out waiting for job ' + jobId);
+}
+
+test('manager runs spawn and resume through a provider CLI process', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-test-'));
+  const bin = join(root, 'bin');
+  const cwd = join(root, 'repo');
+  await mkdir(bin);
+  await mkdir(cwd);
+
+  const fakeCodex = join(bin, 'codex');
+  await writeFile(
+    fakeCodex,
+    `#!/usr/bin/env node
+const resumed = process.argv.includes('resume');
+console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-test' }));
+console.log(JSON.stringify({ type: 'turn.started' }));
+console.log(JSON.stringify({
+  type: 'item.completed',
+  item: { type: 'agent_message', text: resumed ? 'follow-up' : 'first' }
+}));
+console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
+`,
+  );
+  await chmod(fakeCodex, 0o755);
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + delimiter + (previousPath ?? '');
+
+  try {
+    const manager = await AgentManager.create(new StateStore(join(root, 'state.json')));
+    const { agent, job } = await manager.spawn({
+      provider: 'codex',
+      prompt: 'first prompt',
+      cwd,
+      access: 'read-only',
+    });
+
+    const first = await waitForJob(manager, job.id);
+    assert.equal(first.status, 'succeeded');
+    assert.equal(first.response, 'first');
+    assert.equal(manager.status(agent.id).agent.nativeSessionId, 'thread-test');
+
+    const followUp = await manager.send(agent.id, 'second prompt');
+    const second = await waitForJob(manager, followUp.id);
+    assert.equal(second.status, 'succeeded');
+    assert.equal(second.response, 'follow-up');
+    assert.equal(manager.status(agent.id).agent.status, 'idle');
+  } finally {
+    process.env.PATH = previousPath;
+  }
+});
+
+test('teams record external-host supervision and parent-child relationships', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-team-'));
+  const manager = await AgentManager.create(new StateStore(join(root, 'state.json')));
+
+  const team = await manager.createTeam({ name: 'review' });
+  const status = manager.teamStatus(team.id);
+
+  assert.equal(status.team.name, 'review');
+  assert.equal(status.team.supervisorAgentId, undefined);
+  assert.deepEqual(status.members, []);
+});

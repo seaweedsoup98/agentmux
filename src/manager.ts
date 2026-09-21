@@ -8,6 +8,7 @@ import type {
   AccessMode,
   AgentJob,
   AgentSession,
+  AgentTeam,
   AgentmuxState,
   ProviderName,
   RunRequest,
@@ -22,6 +23,13 @@ export interface SpawnOptions {
   model?: string;
   effort?: string;
   access?: AccessMode;
+  teamId?: string;
+  parentAgentId?: string;
+}
+
+export interface TeamCreateOptions {
+  name?: string;
+  supervisorAgentId?: string;
 }
 
 export class AgentManager {
@@ -63,12 +71,88 @@ export class AgentManager {
     return listProviders();
   }
 
+  async createTeam(options: TeamCreateOptions = {}): Promise<AgentTeam> {
+    const now = new Date().toISOString();
+    let supervisor: AgentSession | undefined;
+
+    if (options.supervisorAgentId) {
+      supervisor = this.requireAgent(options.supervisorAgentId);
+      if (supervisor.teamId) {
+        throw new Error('Supervisor already belongs to team: ' + supervisor.teamId);
+      }
+    }
+
+    const team: AgentTeam = {
+      id: this.id('t'),
+      name: options.name,
+      supervisorAgentId: supervisor?.id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.state.teams[team.id] = team;
+
+    if (supervisor) {
+      supervisor.teamId = team.id;
+      supervisor.updatedAt = now;
+    }
+
+    await this.store.save(this.state);
+    return structuredClone(team);
+  }
+
+  teamStatus(teamId: string): { team: AgentTeam; members: AgentSession[] } {
+    const team = this.requireTeam(teamId);
+    const members = Object.values(this.state.agents)
+      .filter((agent) => agent.teamId === teamId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((agent) => structuredClone(agent));
+
+    return { team: structuredClone(team), members };
+  }
+
+  teams(): AgentTeam[] {
+    return Object.values(this.state.teams)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((team) => structuredClone(team));
+  }
+
   async spawn(options: SpawnOptions): Promise<{ agent: AgentSession; job: AgentJob }> {
     const cwd = resolve(options.cwd ?? process.cwd());
     const info = await stat(cwd);
     if (!info.isDirectory()) throw new Error('cwd is not a directory: ' + cwd);
 
     const now = new Date().toISOString();
+    let teamId = options.teamId;
+    let parent: AgentSession | undefined;
+
+    if (teamId) this.requireTeam(teamId);
+
+    if (options.parentAgentId) {
+      parent = this.requireAgent(options.parentAgentId);
+
+      if (parent.teamId && teamId && parent.teamId !== teamId) {
+        throw new Error('Parent belongs to a different team: ' + parent.teamId);
+      }
+
+      teamId ??= parent.teamId;
+
+      if (!teamId) {
+        const team: AgentTeam = {
+          id: this.id('t'),
+          supervisorAgentId: parent.id,
+          createdAt: now,
+          updatedAt: now,
+        };
+        this.state.teams[team.id] = team;
+        parent.teamId = team.id;
+        parent.updatedAt = now;
+        teamId = team.id;
+      } else if (!parent.teamId) {
+        parent.teamId = teamId;
+        parent.updatedAt = now;
+      }
+    }
+
     const agent: AgentSession = {
       id: this.id('a'),
       name: options.name,
@@ -78,6 +162,8 @@ export class AgentManager {
       effort: options.effort,
       role: options.role,
       access: options.access ?? 'workspace-write',
+      teamId,
+      parentAgentId: parent?.id,
       status: 'running',
       createdAt: now,
       updatedAt: now,
@@ -238,6 +324,12 @@ export class AgentManager {
     const agent = this.state.agents[agentId];
     if (!agent) throw new Error('Unknown agent: ' + agentId);
     return agent;
+  }
+
+  private requireTeam(teamId: string): AgentTeam {
+    const team = this.state.teams[teamId];
+    if (!team) throw new Error('Unknown team: ' + teamId);
+    return team;
   }
 
   private id(prefix: string): string {

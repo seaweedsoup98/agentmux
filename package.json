@@ -19,6 +19,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build",
     "start": "node dist/index.js"
   },
   "dependencies": {
@@ -32,5 +33,22 @@
     "tsx": "^4.20.0",
     "typescript": "^6.0.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seaweedsoup98/agentmux.git"
+  },
+  "bugs": {
+    "url": "https://github.com/seaweedsoup98/agentmux/issues"
+  },
+  "homepage": "https://github.com/seaweedsoup98/agentmux#readme",
+  "keywords": [
+    "mcp",
+    "codex",
+    "claude-code",
+    "gemini",
+    "antigravity",
+    "multi-agent",
+    "coding-agent"
+  ],
   "license": "Apache-2.0"
 }
