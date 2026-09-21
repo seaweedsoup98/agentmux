@@ -3,10 +3,14 @@ import { readFile } from 'node:fs/promises';
 const pkg = JSON.parse(await readFile('package.json', 'utf8'));
 const errors = [];
 
-if (pkg.name === 'agentmux') {
+const expectedPackageName = "@jiho.ko/agentmux";
+if (pkg.name !== expectedPackageName) {
   errors.push(
-    'The unscoped npm name "agentmux" is already owned by another project. ' +
-      'Choose a different npm package name before publishing.',
+    'package.json name must be ' +
+      JSON.stringify(expectedPackageName) +
+      ', got ' +
+      JSON.stringify(pkg.name) +
+      '.',
   );
 }
 
