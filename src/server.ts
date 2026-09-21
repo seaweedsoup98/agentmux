@@ -74,6 +74,67 @@ export function buildServer(manager: AgentManager): McpServer {
   );
 
   server.registerTool(
+    'spawn_many',
+    {
+      description:
+        'Spawn up to 16 coding-agent sessions. Sessions are started sequentially but their jobs run concurrently.',
+      inputSchema: z.object({
+        agents: z
+          .array(
+            z.object({
+              provider: z.enum(PROVIDERS),
+              prompt: z.string().min(1),
+              cwd: z.string().optional(),
+              name: z.string().min(1).max(80).optional(),
+              role: z.string().min(1).max(200).optional(),
+              model: z.string().min(1).optional(),
+              effort: z.string().min(1).optional(),
+              access: z.enum(ACCESS_MODES).default('workspace-write'),
+              team_id: z.string().min(1).optional(),
+              parent_agent_id: z.string().min(1).optional(),
+            }),
+          )
+          .min(1)
+          .max(16),
+      }),
+    },
+    async ({ agents }) => {
+      try {
+        return text(
+          await manager.spawnMany(
+            agents.map(({ team_id, parent_agent_id, ...input }) => ({
+              ...input,
+              teamId: team_id,
+              parentAgentId: parent_agent_id,
+            })),
+          ),
+        );
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'wait',
+    {
+      description:
+        'Wait for one or more jobs to finish, returning early when all are terminal. Timeout is capped at 60 seconds.',
+      inputSchema: z.object({
+        job_ids: z.array(z.string().min(1)).min(1).max(32),
+        timeout_ms: z.number().int().min(0).max(60_000).default(30_000),
+      }),
+    },
+    async ({ job_ids, timeout_ms }) => {
+      try {
+        return text(await manager.wait(job_ids, timeout_ms));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
     'status',
     {
       description: 'Get one agent and its latest job.',
