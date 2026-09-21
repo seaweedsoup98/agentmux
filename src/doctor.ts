@@ -74,7 +74,7 @@ async function checkProvider(
     maxOutput: 64 * 1024,
   });
 
-  if (version.error || version.timedOut || version.exitCode !== 0) {
+  if (version.error) {
     return {
       provider,
       command,
@@ -82,11 +82,22 @@ async function checkProvider(
       installed: false,
       state: 'missing',
       auth: 'not_applicable',
-      error:
-        version.error ??
-        (version.timedOut
-          ? 'Timed out while running ' + command + ' --version'
-          : version.stderr || version.stdout || 'Exited with code ' + version.exitCode),
+      error: version.error,
+      loginHint: loginHint(provider),
+    };
+  }
+
+  if (version.timedOut || version.exitCode !== 0) {
+    return {
+      provider,
+      command,
+      available: true,
+      installed: true,
+      state: 'unhealthy',
+      auth: 'unknown',
+      error: version.timedOut
+        ? 'Timed out while running ' + command + ' --version'
+        : version.stderr || version.stdout || 'Exited with code ' + version.exitCode,
       loginHint: loginHint(provider),
     };
   }
