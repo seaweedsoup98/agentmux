@@ -106,17 +106,37 @@ process.exit(2);
     );
 
     const log = await readFile(logPath, 'utf8');
-    assert.match(log, /codex \["plugin","marketplace","add","seaweedsoup98\\/agentmux","--ref","main"\]/);
-    assert.match(log, /codex \["plugin","add","agentmux@agentmux"\]/);
-    assert.match(log, /codex \["mcp","remove","agentmux"\]/);
+    assert.ok(
+      log.includes(
+        'codex ["plugin","marketplace","add","seaweedsoup98/agentmux","--ref","main"]',
+      ),
+    );
+    assert.ok(log.includes('codex ["plugin","add","agentmux@agentmux"]'));
+    assert.ok(log.includes('codex ["mcp","remove","agentmux"]'));
 
-    assert.match(log, /claude \["plugin","marketplace","add","seaweedsoup98\\/agentmux@main","--scope","user"\]/);
-    assert.match(log, /claude \["plugin","install","agentmux@agentmux","--scope","user"\]/);
-    assert.match(log, /claude \["plugin","enable","agentmux@agentmux","--scope","user"\]/);
-    assert.match(log, /claude \["mcp","remove","agentmux","--scope","user"\]/);
+    assert.ok(
+      log.includes(
+        'claude ["plugin","marketplace","add","seaweedsoup98/agentmux@main","--scope","user"]',
+      ),
+    );
+    assert.ok(
+      log.includes(
+        'claude ["plugin","install","agentmux@agentmux","--scope","user"]',
+      ),
+    );
+    assert.ok(
+      log.includes(
+        'claude ["plugin","enable","agentmux@agentmux","--scope","user"]',
+      ),
+    );
+    assert.ok(
+      log.includes(
+        'claude ["mcp","remove","agentmux","--scope","user"]',
+      ),
+    );
 
-    assert.match(log, /agy \["plugin","install",/);
-    assert.match(log, /agy \["plugin","enable","agentmux"\]/);
+    assert.ok(log.includes('agy ["plugin","install",'));
+    assert.ok(log.includes('agy ["plugin","enable","agentmux"]'));
 
     const config = JSON.parse(await readFile(agyConfigPath, 'utf8')) as {
       keepMe: boolean;
