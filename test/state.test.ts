@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -51,4 +51,29 @@ test('transactions from independent stores do not lose updates', async () => {
 
   const state = await stores[0].load();
   assert.equal(Object.keys(state.teams).length, 12);
+});
+
+
+test('transaction immediately recovers a lock owned by a dead process', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-dead-lock-'));
+  const path = join(root, 'state.json');
+  const store = new StateStore(path);
+
+  await mkdir(store.lockPath);
+  await writeFile(
+    join(store.lockPath, 'owner.json'),
+    JSON.stringify({ pid: 2147483647 }),
+  );
+
+  await store.transaction((state) => {
+    const now = new Date().toISOString();
+    state.teams.recovered = {
+      id: 'recovered',
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+
+  const state = await store.load();
+  assert.ok(state.teams.recovered);
 });
