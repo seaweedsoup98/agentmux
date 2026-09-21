@@ -3,8 +3,8 @@
 ## Important: package name
 
 The unscoped npm package name `agentmux` is already owned by another project.
-The repository and CLI may continue to be named `agentmux`, but `package.json.name`
-must use a publishable npm package name before the first release.
+This repository publishes as `@jiho.ko/agentmux` while keeping the repository and CLI
+command named `agentmux`.
 
 Run:
 
@@ -20,15 +20,13 @@ published package name.
 npm trusted publishing cannot be configured for a package that does not exist yet.
 Therefore the first publication is an explicit maintainer action.
 
-1. Confirm the npm account:
+1. Confirm the npm account is `jiho.ko`:
 
    ```bash
    npm whoami
    ```
 
-2. Set the final package name in `package.json` and update all
-   `<package>@latest` launch references.
-3. Run:
+2. Run:
 
    ```bash
    npm run check
@@ -36,19 +34,19 @@ Therefore the first publication is an explicit maintainer action.
    npm pack --dry-run
    ```
 
-4. Log in if needed:
+3. Log in if needed:
 
    ```bash
    npm login
    ```
 
-5. Publish version 0.1.0:
+4. Publish version 0.1.0:
 
    ```bash
    npm publish
    ```
 
-For a scoped package, `publishConfig.access=public` is already set.
+`publishConfig.access=public` is already set for the scoped public package.
 
 ## Configure trusted publishing after the first release
 
