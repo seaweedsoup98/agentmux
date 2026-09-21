@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
 import { AgentManager } from '../src/manager.js';
-import { StateStore } from '../src/state.js';
+import { StateStore } from '../src/state.js';\nimport { writeFakeCommand } from './helpers.js';
 
 async function waitForJob(
   manager: AgentManager,
@@ -27,10 +27,7 @@ test('manager runs spawn and resume through a provider CLI process', async () =>
   await mkdir(bin);
   await mkdir(cwd);
 
-  const fakeCodex = join(bin, 'codex');
-  await writeFile(
-    fakeCodex,
-    `#!/usr/bin/env node
+  await writeFakeCommand(bin, 'codex', `#!/usr/bin/env node
 const resumed = process.argv.includes('resume');
 console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-test' }));
 console.log(JSON.stringify({ type: 'turn.started' }));
@@ -47,9 +44,7 @@ console.log(JSON.stringify({
   item: { type: 'agent_message', text: resumed ? 'follow-up' : 'first' }
 }));
 console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
-`,
-  );
-  await chmod(fakeCodex, 0o755);
+`);
 
   const previousPath = process.env.PATH;
   process.env.PATH = bin + delimiter + (previousPath ?? '');
