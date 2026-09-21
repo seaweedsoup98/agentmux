@@ -55,6 +55,8 @@ export interface AgentJob {
   error?: string;
   stderr?: string;
   exitCode?: number | null;
+  ownerPid?: number;
+  ownerInstanceId?: string;
 }
 
 export interface AgentmuxState {

@@ -154,7 +154,7 @@ export function buildServer(manager: AgentManager): McpServer {
     },
     async ({ agent_id }) => {
       try {
-        return text(manager.status(agent_id));
+        return text(await manager.status(agent_id));
       } catch (error) {
         return failure(error);
       }
@@ -169,7 +169,7 @@ export function buildServer(manager: AgentManager): McpServer {
     },
     async ({ job_id }) => {
       try {
-        return text(manager.result(job_id));
+        return text(await manager.result(job_id));
       } catch (error) {
         return failure(error);
       }
@@ -182,7 +182,7 @@ export function buildServer(manager: AgentManager): McpServer {
       description: 'List agentmux sessions known to this local state store.',
       inputSchema: z.object({}),
     },
-    async () => text(manager.list()),
+    async () => text(await manager.list()),
   );
 
   server.registerTool(
@@ -232,7 +232,7 @@ export function buildServer(manager: AgentManager): McpServer {
     },
     async ({ team_id }) => {
       try {
-        return text(manager.teamStatus(team_id));
+        return text(await manager.teamStatus(team_id));
       } catch (error) {
         return failure(error);
       }
@@ -245,7 +245,7 @@ export function buildServer(manager: AgentManager): McpServer {
       description: 'List logical agent teams.',
       inputSchema: z.object({}),
     },
-    async () => text(manager.teams()),
+    async () => text(await manager.teams()),
   );
 
   server.registerTool(
