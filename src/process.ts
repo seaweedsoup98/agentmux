@@ -7,7 +7,11 @@ const MAX_OUTPUT_CHARS = 4 * 1024 * 1024;
 export class ProcessRunner {
   private readonly active = new Map<string, ChildProcess>();
 
-  run(jobId: string, spec: CommandSpec): Promise<ProcessResult> {
+  run(
+    jobId: string,
+    spec: CommandSpec,
+    onStdoutLine?: (line: string) => void | Promise<void>,
+  ): Promise<ProcessResult> {
     return new Promise((resolve, reject) => {
       const child = spawn(spec.command, spec.args, {
         cwd: spec.cwd,
@@ -29,11 +33,35 @@ export class ProcessRunner {
       let stderr = '';
       let overflow: string | undefined;
       let settled = false;
+      let lineBuffer = '';
+      let lineQueue: Promise<void> = Promise.resolve();
+
+      const enqueueLine = (line: string): void => {
+        if (!onStdoutLine || !line.trim()) return;
+        lineQueue = lineQueue
+          .then(() => onStdoutLine(line))
+          .then(() => undefined)
+          .catch(() => undefined);
+      };
 
       const collect = (target: 'stdout' | 'stderr', chunk: Buffer): void => {
         if (overflow) return;
-        if (target === 'stdout') stdout += chunk.toString('utf8');
-        else stderr += chunk.toString('utf8');
+        const text = chunk.toString('utf8');
+        if (target === 'stdout') {
+          stdout += text;
+          if (onStdoutLine) {
+            lineBuffer += text;
+            let newline = lineBuffer.indexOf('\n');
+            while (newline >= 0) {
+              const line = lineBuffer.slice(0, newline).replace(/\r$/, '');
+              lineBuffer = lineBuffer.slice(newline + 1);
+              enqueueLine(line);
+              newline = lineBuffer.indexOf('\n');
+            }
+          }
+        } else {
+          stderr += text;
+        }
         if (stdout.length + stderr.length > MAX_OUTPUT_CHARS) {
           overflow = 'Provider output exceeded 4 MiB';
           child.kill();
@@ -54,8 +82,12 @@ export class ProcessRunner {
         if (settled) return;
         settled = true;
         this.active.delete(jobId);
+        if (lineBuffer) {
+          enqueueLine(lineBuffer.replace(/\r$/, ''));
+          lineBuffer = '';
+        }
         if (overflow) stderr = (stderr + '\n' + overflow).trim();
-        resolve({ exitCode, signal, stdout, stderr });
+        void lineQueue.then(() => resolve({ exitCode, signal, stdout, stderr }));
       });
     });
   }
