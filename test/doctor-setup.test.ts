@@ -222,3 +222,119 @@ process.exit(2);
     process.env.PATH = previousPath;
   }
 });
+
+
+test('setup does not remove an existing CLI MCP entry after an unrelated add failure', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-setup-safe-'));
+  const bin = join(root, 'bin');
+  const home = join(root, 'home');
+  const logPath = join(root, 'commands.log');
+  await mkdir(bin);
+  await mkdir(home);
+
+  await writeFakeCommand(bin, 'codex', `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  console.log('codex-cli 9.9.9');
+  process.exit(0);
+}
+if (args[0] === 'login' && args[1] === 'status') process.exit(0);
+if (args[0] === 'mcp') {
+  fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(args) + '\\n');
+  if (args[1] === 'list') process.exit(0);
+  if (args[1] === 'add') {
+    console.error('permission denied');
+    process.exit(1);
+  }
+  if (args[1] === 'remove') process.exit(0);
+}
+process.exit(2);
+`);
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
+  try {
+    const result = await runSetup({
+      hosts: ['codex'],
+      yes: true,
+      homeDir: home,
+      runtime: {
+        command: 'node',
+        args: ['/runtime/agentmux.js'],
+        source: 'local',
+      },
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.actions[0]?.detail ?? '', /permission denied/);
+
+    const commands = (await readFile(logPath, 'utf8'))
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as string[]);
+
+    assert.equal(commands.some((args) => args[1] === 'add'), true);
+    assert.equal(commands.some((args) => args[1] === 'remove'), false);
+  } finally {
+    process.env.PATH = previousPath;
+  }
+});
+
+test('setup skips direct MCP registration when the native Claude plugin is active', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-setup-plugin-'));
+  const bin = join(root, 'bin');
+  const home = join(root, 'home');
+  const logPath = join(root, 'commands.log');
+  await mkdir(bin);
+  await mkdir(home);
+
+  await writeFakeCommand(bin, 'claude', `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  console.log('claude 7.7.7');
+  process.exit(0);
+}
+if (args[0] === 'auth' && args[1] === 'status') process.exit(0);
+if (args[0] === 'plugin' && args[1] === 'list') {
+  console.log('agentmux@agentmux enabled');
+  process.exit(0);
+}
+if (args[0] === 'mcp') {
+  fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(args) + '\\n');
+  process.exit(0);
+}
+process.exit(2);
+`);
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
+  try {
+    const result = await runSetup({
+      hosts: ['claude'],
+      yes: true,
+      homeDir: home,
+      runtime: {
+        command: 'node',
+        args: ['/runtime/agentmux.js'],
+        source: 'local',
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.actions[0]?.status, 'skipped');
+    assert.match(result.actions[0]?.detail ?? '', /plugin is already configured/);
+
+    const raw = await readFile(logPath, 'utf8');
+    const commands = raw
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as string[]);
+
+    assert.deepEqual(commands, [['mcp', 'list']]);
+  } finally {
+    process.env.PATH = previousPath;
+  }
+});
