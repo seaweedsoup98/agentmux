@@ -27,6 +27,7 @@ export class JobRuntime {
   async execute(request: ExecutionRequest): Promise<void> {
     const { agentId, jobId, prompt, firstRun } = request;
     let cancelMonitor: ReturnType<typeof setInterval> | undefined;
+    let failureProvider: AgentSession['provider'] | undefined;
 
     try {
       const prepared = await this.store.transaction((state) => {
@@ -49,6 +50,7 @@ export class JobRuntime {
         return structuredClone(agent);
       });
       if (!prepared) return;
+      failureProvider = prepared.provider;
 
       let checking = false;
       cancelMonitor = setInterval(() => {
@@ -176,7 +178,8 @@ export class JobRuntime {
         });
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const raw = error instanceof Error ? error.message : String(error);
+      const message = providerFailureMessage(failureProvider, raw);
       await this.recordFailure(agentId, jobId, message).catch(() => undefined);
     } finally {
       if (cancelMonitor) clearInterval(cancelMonitor);
@@ -263,4 +266,34 @@ function agentEnvironment(agent: AgentSession): NodeJS.ProcessEnv {
 function tail(value: string, max: number): string | undefined {
   const trimmed = value.trim();
   return trimmed ? trimmed.slice(-max) : undefined;
+}
+
+
+function providerFailureMessage(
+  provider: AgentSession['provider'] | undefined,
+  message: string,
+): string {
+  if (!provider) return message;
+
+  if (/ENOENT|not found|not recognized as an internal or external command/i.test(message)) {
+    const name =
+      provider === 'claude'
+        ? 'Claude Code'
+        : provider === 'antigravity'
+          ? 'Antigravity'
+          : 'Codex';
+    return name + ' CLI is not available on PATH. Run "agentmux doctor" and install or select another provider. Original error: ' + message;
+  }
+
+  if (/auth|login|log in|sign in|unauthorized|401|credential/i.test(message)) {
+    const hint =
+      provider === 'claude'
+        ? 'claude auth login'
+        : provider === 'codex'
+          ? 'codex login'
+          : 'run agy interactively once to sign in';
+    return message + ' Authentication may be required; try: ' + hint;
+  }
+
+  return message;
 }
