@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
 import { AgentManager } from '../src/manager.js';
-import { StateStore } from '../src/state.js';\nimport { writeFakeCommand } from './helpers.js';
+import { StateStore } from '../src/state.js';
+import { writeFakeCommand } from './helpers.js';
 
 async function waitForJob(
   manager: AgentManager,
