@@ -166,7 +166,7 @@ agentmux plugins
 
 ### Codex / OpenAI plugin
 
-The repository exposes a Codex marketplace in `.agents/plugins/marketplace.json`. Add it with:
+The repository exposes a Codex marketplace in `.agents/plugins/marketplace.json`. The Codex bundle includes the current portable Agent Plugins `plugin.json + mcp.json` format plus the `.codex-plugin/.mcp.json` compatibility layout. Add the marketplace with:
 
 ```bash
 codex plugin marketplace add seaweedsoup98/agentmux --ref main
