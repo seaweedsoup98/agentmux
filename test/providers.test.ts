@@ -126,3 +126,130 @@ test('Antigravity access modes map to explicit execution and sandbox policy', ()
   assert.ok(argsFor('full').includes('--dangerously-skip-permissions'));
   assert.equal(argsFor('full').includes('--sandbox'), false);
 });
+
+
+test('Claude uses stream-json and parses terminal result events', () => {
+  const adapter = getProvider('claude');
+  const command = adapter.start(request);
+  assert.ok(command.args.includes('stream-json'));
+  assert.ok(command.args.includes('--verbose'));
+
+  const output = [
+    JSON.stringify({ type: 'system', subtype: 'init', session_id: 'session-2' }),
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'tool_use', id: 'tool-1', name: 'Read', input: {} }],
+      },
+    }),
+    JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      session_id: 'session-2',
+      result: 'done',
+    }),
+  ].join('\n');
+
+  assert.deepEqual(adapter.parse(output), {
+    nativeSessionId: 'session-2',
+    response: 'done',
+    error: undefined,
+    success: true,
+  });
+  assert.deepEqual(
+    adapter.parseProgressLine?.(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'tool-1', name: 'Read' }],
+        },
+      }),
+    ),
+    [{
+      kind: 'tool_started',
+      label: 'Read',
+      detail: { toolUseId: 'tool-1' },
+    }],
+  );
+});
+
+test('Antigravity uses stream-json and parses result and step events', () => {
+  const adapter = getProvider('antigravity');
+  assert.ok(adapter.start(request).args.includes('stream-json'));
+
+  const output = [
+    JSON.stringify({
+      event: 'init',
+      conversation_id: 'conversation-2',
+    }),
+    JSON.stringify({
+      event: 'step_update',
+      step_update: {
+        step_index: 3,
+        state: 'RUNNING',
+        step_type: 'run_command',
+      },
+    }),
+    JSON.stringify({
+      event: 'result',
+      result: {
+        conversation_id: 'conversation-2',
+        status: 'SUCCESS',
+        response: 'done',
+      },
+    }),
+  ].join('\n');
+
+  assert.deepEqual(adapter.parse(output), {
+    nativeSessionId: 'conversation-2',
+    response: 'done',
+    error: undefined,
+    success: true,
+  });
+  assert.deepEqual(
+    adapter.parseProgressLine?.(
+      JSON.stringify({
+        event: 'step_update',
+        step_update: {
+          step_index: 3,
+          state: 'DONE',
+          step_type: 'run_command',
+          duration_seconds: 1.25,
+        },
+      }),
+    ),
+    [{
+      kind: 'tool_completed',
+      label: 'run_command',
+      state: 'DONE',
+      detail: { stepIndex: 3, durationSeconds: 1.25 },
+    }],
+  );
+});
+
+test('Codex progress parser ignores response text and exposes tool lifecycle only', () => {
+  const adapter = getProvider('codex');
+  assert.deepEqual(
+    adapter.parseProgressLine?.(
+      JSON.stringify({
+        type: 'item.started',
+        item: { id: 'item-1', type: 'command_execution' },
+      }),
+    ),
+    [{
+      kind: 'tool_started',
+      label: 'command_execution',
+      detail: { itemId: 'item-1' },
+    }],
+  );
+  assert.deepEqual(
+    adapter.parseProgressLine?.(
+      JSON.stringify({
+        type: 'item.completed',
+        item: { id: 'item-2', type: 'assistant_message', text: 'secret text' },
+      }),
+    ),
+    [],
+  );
+});

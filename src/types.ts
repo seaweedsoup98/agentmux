@@ -30,6 +30,9 @@ export const EVENT_TYPES = [
   'delegation.canceled',
   'workspace.applied',
   'workspace.cleaned',
+  'provider.progress',
+  'provider.tool_started',
+  'provider.tool_completed',
 ] as const;
 export type AgentEventType = (typeof EVENT_TYPES)[number];
 export type AgentEventDetailValue = string | number | boolean | null;
@@ -185,6 +188,13 @@ export interface CommandSpec {
   env?: NodeJS.ProcessEnv;
 }
 
+export interface ProviderProgress {
+  kind: 'progress' | 'tool_started' | 'tool_completed';
+  label?: string;
+  state?: string;
+  detail?: Record<string, AgentEventDetailValue>;
+}
+
 export interface ProviderOutput {
   nativeSessionId?: string;
   response?: string;
@@ -197,6 +207,7 @@ export interface ProviderAdapter {
   start(request: RunRequest): CommandSpec;
   resume(request: RunRequest, nativeSessionId: string): CommandSpec;
   parse(stdout: string): ProviderOutput;
+  parseProgressLine?(line: string): ProviderProgress[];
 }
 
 export interface ProcessResult {

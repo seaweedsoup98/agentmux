@@ -195,7 +195,7 @@ Managed agents can delegate only within their team. The assigned agent can expli
 
 ### Durable orchestration events
 
-Every important lifecycle transition is also appended to a process-safe ordered event stream. Events use a monotonic `seq` cursor and cover team creation, agent spawning/stopping, job creation/start/completion/cancellation, and message delivery/read/wake state.
+Every important lifecycle transition is also appended to a process-safe ordered event stream. Events use a monotonic `seq` cursor and cover team creation, agent spawning/stopping, job creation/start/completion/cancellation, message delivery/read/wake state, workspace integration, and bounded provider progress.
 
 ```text
 events(after_seq=0, team_id="<team>")
@@ -204,7 +204,14 @@ events_wait(after_seq=42, timeout_ms=30000)
 
 `events_wait` is a bounded long-poll rather than tight polling. Because the cursor is persisted in the same transactional state store, Codex UI, Claude Code UI, Antigravity UI, and nested managed agents can observe the same orchestration history even when they are backed by different agentmux MCP processes. Managed agents remain restricted to their own team.
 
-The event stream is intentionally metadata-oriented: message bodies and provider stdout are not copied into events. Detailed content remains in inbox/job APIs.
+The event stream is intentionally metadata-oriented: message bodies, assistant text deltas, command contents, and raw provider stdout are not copied into events. Detailed content remains in inbox/job APIs.
+
+Provider adapters normalize only useful structured progress:
+- Codex `exec --json`: non-response item start/completion
+- Claude Code `stream-json`: tool-use and tool-result transitions
+- Antigravity `stream-json`: non-response step state transitions
+
+These become `provider.progress`, `provider.tool_started`, and `provider.tool_completed` events. Exact duplicates within one second are coalesced, and the durable event journal is bounded rather than growing indefinitely.
 
 ## Workspace isolation
 
@@ -254,7 +261,6 @@ These mappings are intentionally conservative and are not identical security mod
 
 - delegation dependencies / parent-child task graphs
 - push subscriptions / notifications on top of `events_wait`
-- streaming progress and richer tool events
 - persistent named roles and reusable team templates
 - package publishing and one-command MCP registration
 
