@@ -38,8 +38,8 @@ Provider sessions are preserved using their native IDs:
 | Provider | CLI | Native session ID |
 | --- | --- | --- |
 | Codex | `codex exec --json` | `thread_id` |
-| Claude Code | `claude -p --output-format json` | `session_id` |
-| Antigravity | `agy -p --output-format json` | `conversation_id` |
+| Claude Code | `claude -p --output-format stream-json --verbose` | `session_id` |
+| Antigravity | `agy -p --output-format stream-json` | `conversation_id` |
 
 ## Main vs subagent
 
@@ -72,6 +72,7 @@ If the broker cannot start, agentmux falls back to MCP-owned execution and repor
 
 - Node.js 20+
 - At least one supported CLI installed and authenticated: `codex`, `claude`, or `agy`
+- Git only when using worktree isolation/integration
 
 ## Install from a local checkout
 
@@ -140,7 +141,7 @@ npm run dev
 
 The server stores local session metadata in `~/.agentmux/state.json`. Override that directory with `AGENTMUX_HOME`.
 
-The state store is shared across local agentmux MCP processes. Reads use fresh snapshots; mutations use a process-safe lock plus atomic file replacement. A running job records its owner PID/instance so starting another MCP host does not incorrectly recover or overwrite work owned by a live host.
+The state store is shared across local agentmux MCP processes. Reads use fresh snapshots; mutations use a process-safe lock plus atomic file replacement. Windows transient replace failures are retried without falling back to a non-atomic delete-and-rewrite path. A running job records its owner PID/instance so starting another MCP host does not incorrectly recover or overwrite work owned by a live host.
 
 ## Example
 
@@ -257,12 +258,17 @@ These mappings are intentionally conservative and are not identical security mod
 4. Make workspace isolation optional; `auto` only isolates concurrent writers.
 5. Keep the core small. Worktrees, messaging policy, and richer supervision sit above provider adapters.
 
-## Roadmap
+## Deliberate non-goals
 
-- delegation dependencies / parent-child task graphs
-- push subscriptions / notifications on top of `events_wait`
-- persistent named roles and reusable team templates
-- package publishing and one-command MCP registration
+To keep the runtime small, agentmux intentionally does not add:
+
+- a separate multi-agent UI — the existing Codex, Claude Code, or Antigravity UI stays in control
+- a workflow/task-DAG DSL — nested agents plus tracked delegations cover ownership without another orchestration language
+- a second push/message transport — `events_wait` is the shared long-poll event primitive
+- automatic worktree merging — the control tower explicitly inspects and applies isolated changes
+- provider-specific workflow abstractions in the core — provider adapters stop at execution/session/progress normalization
+
+Named roles remain lightweight session metadata instead of persistent templates. Package publication can be added independently of the runtime after the real-provider matrix is validated.
 
 ## Real-provider validation
 
