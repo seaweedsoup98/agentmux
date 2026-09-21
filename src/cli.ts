@@ -29,10 +29,8 @@ export async function runCli(argv: string[]): Promise<number> {
 
   if (command === 'doctor') {
     const json = argv.includes('--json');
-    const [providers, hosts] = await Promise.all([
-      doctorProviders(),
-      doctorHosts(),
-    ]);
+    const providers = await doctorProviders();
+    const hosts = await doctorHosts(providers);
 
     if (json) {
       process.stdout.write(
