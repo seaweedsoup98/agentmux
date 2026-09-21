@@ -51,6 +51,10 @@ process.exit(2);
     assert.equal(codex?.state, 'ready');
     assert.equal(codex?.auth, 'ready');
     assert.equal(claude?.state, 'missing');
+    assert.equal(
+      claude?.installHint,
+      'npm install -g @anthropic-ai/claude-code',
+    );
     assert.equal(agy?.state, 'installed');
     assert.equal(agy?.auth, 'unknown');
   } finally {
