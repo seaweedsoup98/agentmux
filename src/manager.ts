@@ -728,7 +728,7 @@ export class AgentManager {
   }
 
   async cancelDelegation(delegationId: string): Promise<AgentDelegation> {
-    return this.store.transaction((state) => {
+    const { delegation, jobId } = await this.store.transaction((state) => {
       const delegation = this.requireDelegation(state, delegationId);
       const caller = this.caller(state);
       if (
@@ -741,7 +741,39 @@ export class AgentManager {
       if (delegation.status === 'completed' || delegation.status === 'canceled') {
         throw new Error('Delegation is already terminal: ' + delegation.status);
       }
+
       const now = new Date().toISOString();
+      const target = state.agents[delegation.toAgentId];
+      const wakeJob = delegation.wakeJobId
+        ? state.jobs[delegation.wakeJobId]
+        : undefined;
+      let jobId: string | undefined;
+
+      if (
+        wakeJob?.status === 'running' &&
+        target?.activeJobId === wakeJob.id
+      ) {
+        wakeJob.status = 'canceled';
+        wakeJob.finishedAt = now;
+        wakeJob.error = 'Canceled with delegation ' + delegation.id;
+        target.status = target.nativeSessionId ? 'idle' : 'error';
+        target.activeJobId = undefined;
+        target.updatedAt = now;
+        target.error = target.nativeSessionId
+          ? undefined
+          : wakeJob.error;
+        jobId = wakeJob.id;
+        this.appendEvent(state, {
+          type: 'job.canceled',
+          createdAt: now,
+          teamId: delegation.teamId,
+          agentId: delegation.toAgentId,
+          actorAgentId: caller?.id,
+          jobId: wakeJob.id,
+          detail: { reason: 'delegation_canceled' },
+        });
+      }
+
       delegation.status = 'canceled';
       delegation.canceledAt = now;
       delegation.updatedAt = now;
@@ -751,10 +783,14 @@ export class AgentManager {
         teamId: delegation.teamId,
         agentId: delegation.toAgentId,
         actorAgentId: caller?.id,
+        jobId,
         detail: { delegationId: delegation.id },
       });
-      return structuredClone(delegation);
+      return { delegation: structuredClone(delegation), jobId };
     });
+
+    if (jobId) this.runner.cancel(jobId);
+    return delegation;
   }
 
   async events(options: EventsOptions = {}): Promise<AgentEvent[]> {
