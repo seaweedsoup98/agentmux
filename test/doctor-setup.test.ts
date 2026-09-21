@@ -344,3 +344,91 @@ process.exit(2);
     process.env.PATH = previousPath;
   }
 });
+
+
+test('setup initializes an existing empty Antigravity MCP config', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-setup-empty-agy-'));
+  const bin = join(root, 'bin');
+  const home = join(root, 'home');
+  const configDir = join(home, '.gemini', 'config');
+  const configPath = join(configDir, 'mcp_config.json');
+  await mkdir(bin);
+  await mkdir(configDir, { recursive: true });
+  await writeFile(configPath, '   \r\n', 'utf8');
+
+  await writeFakeCommand(bin, 'agy', `#!/usr/bin/env node
+if (process.argv[2] === '--version') {
+  console.log('agy 8.8.8');
+  process.exit(0);
+}
+process.exit(2);
+`);
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
+  try {
+    const result = await runSetup({
+      hosts: ['antigravity'],
+      yes: true,
+      homeDir: home,
+      runtime: {
+        command: process.execPath,
+        args: ['C:/agentmux/dist/index.js'],
+        source: 'local',
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.actions[0]?.status, 'configured');
+
+    const config = JSON.parse(await readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
+    assert.equal(config.mcpServers.agentmux?.command, process.execPath);
+    assert.deepEqual(config.mcpServers.agentmux?.args, [
+      'C:/agentmux/dist/index.js',
+    ]);
+  } finally {
+    process.env.PATH = previousPath;
+  }
+});
+
+test('setup still refuses a non-empty malformed Antigravity MCP config', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-setup-bad-agy-'));
+  const bin = join(root, 'bin');
+  const home = join(root, 'home');
+  const configDir = join(home, '.gemini', 'config');
+  const configPath = join(configDir, 'mcp_config.json');
+  await mkdir(bin);
+  await mkdir(configDir, { recursive: true });
+  await writeFile(configPath, '{ invalid json', 'utf8');
+
+  await writeFakeCommand(bin, 'agy', `#!/usr/bin/env node
+if (process.argv[2] === '--version') {
+  console.log('agy 8.8.8');
+  process.exit(0);
+}
+process.exit(2);
+`);
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
+  try {
+    const result = await runSetup({
+      hosts: ['antigravity'],
+      yes: true,
+      homeDir: home,
+      runtime: {
+        command: 'node',
+        args: ['/runtime/agentmux.js'],
+        source: 'local',
+      },
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.actions[0]?.detail ?? '', /Cannot safely update/);
+    assert.equal(await readFile(configPath, 'utf8'), '{ invalid json');
+  } finally {
+    process.env.PATH = previousPath;
+  }
+});
