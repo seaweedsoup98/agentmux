@@ -89,6 +89,7 @@ export interface AgentJob {
   exitCode?: number | null;
   ownerPid?: number;
   ownerInstanceId?: string;
+  ownerMode?: ExecutionOwner['mode'];
 }
 
 export interface AgentMessage {

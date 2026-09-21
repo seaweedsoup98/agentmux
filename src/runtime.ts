@@ -26,46 +26,50 @@ export class JobRuntime {
 
   async execute(request: ExecutionRequest): Promise<void> {
     const { agentId, jobId, prompt, firstRun } = request;
-    const prepared = await this.store.transaction((state) => {
-      const agent = state.agents[agentId];
-      const job = state.jobs[jobId];
-      if (!agent || !job || job.status !== 'running') return undefined;
-      if (job.startedAt) return undefined;
-
-      job.ownerPid = this.owner.pid;
-      job.ownerInstanceId = this.owner.instanceId;
-      job.startedAt = new Date().toISOString();
-      appendEvent(state, {
-        type: 'job.started',
-        createdAt: job.startedAt,
-        teamId: agent.teamId,
-        agentId: agent.id,
-        jobId: job.id,
-      });
-      return structuredClone(agent);
-    });
-    if (!prepared) return;
-
-    let checking = false;
-    const cancelMonitor = setInterval(() => {
-      if (checking) return;
-      checking = true;
-      void this.store
-        .load()
-        .then((state) => {
-          const job = state.jobs[jobId];
-          const agent = state.agents[agentId];
-          if (job?.status === 'canceled' || agent?.status === 'stopped') {
-            this.runner.cancel(jobId);
-          }
-        })
-        .finally(() => {
-          checking = false;
-        });
-    }, 250);
-    cancelMonitor.unref();
+    let cancelMonitor: ReturnType<typeof setInterval> | undefined;
 
     try {
+      const prepared = await this.store.transaction((state) => {
+        const agent = state.agents[agentId];
+        const job = state.jobs[jobId];
+        if (!agent || !job || job.status !== 'running') return undefined;
+        if (job.startedAt) return undefined;
+
+        job.ownerPid = this.owner.pid;
+        job.ownerInstanceId = this.owner.instanceId;
+        job.ownerMode = this.owner.mode;
+        job.startedAt = new Date().toISOString();
+        appendEvent(state, {
+          type: 'job.started',
+          createdAt: job.startedAt,
+          teamId: agent.teamId,
+          agentId: agent.id,
+          jobId: job.id,
+        });
+        return structuredClone(agent);
+      });
+      if (!prepared) return;
+
+      let checking = false;
+      cancelMonitor = setInterval(() => {
+        if (checking) return;
+        checking = true;
+        void this.store
+          .load()
+          .then((state) => {
+            const job = state.jobs[jobId];
+            const agent = state.agents[agentId];
+            if (job?.status === 'canceled' || agent?.status === 'stopped') {
+              this.runner.cancel(jobId);
+            }
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            checking = false;
+          });
+      }, 250);
+      cancelMonitor.unref();
+
       const provider = getProvider(prepared.provider);
       const runRequest: RunRequest = {
         prompt,
@@ -173,32 +177,40 @@ export class JobRuntime {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.store.transaction((state) => {
-        const agent = state.agents[agentId];
-        const job = state.jobs[jobId];
-        if (!agent || !job) return;
-        if (job.status === 'canceled' || agent.status === 'stopped') return;
-        if (job.ownerInstanceId !== this.owner.instanceId) return;
-
-        job.status = 'failed';
-        job.error = message;
-        job.finishedAt = new Date().toISOString();
-        agent.status = 'error';
-        agent.activeJobId = undefined;
-        agent.updatedAt = job.finishedAt;
-        agent.error = message;
-        appendEvent(state, {
-          type: 'job.failed',
-          createdAt: job.finishedAt,
-          teamId: agent.teamId,
-          agentId: agent.id,
-          jobId: job.id,
-          detail: { error: message.slice(0, 2048) },
-        });
-      });
+      await this.recordFailure(agentId, jobId, message).catch(() => undefined);
     } finally {
-      clearInterval(cancelMonitor);
+      if (cancelMonitor) clearInterval(cancelMonitor);
     }
+  }
+
+  private async recordFailure(
+    agentId: string,
+    jobId: string,
+    message: string,
+  ): Promise<void> {
+    await this.store.transaction((state) => {
+      const agent = state.agents[agentId];
+      const job = state.jobs[jobId];
+      if (!agent || !job) return;
+      if (job.status === 'canceled' || agent.status === 'stopped') return;
+      if (job.ownerInstanceId !== this.owner.instanceId) return;
+
+      job.status = 'failed';
+      job.error = message;
+      job.finishedAt = new Date().toISOString();
+      agent.status = 'error';
+      agent.activeJobId = undefined;
+      agent.updatedAt = job.finishedAt;
+      agent.error = message;
+      appendEvent(state, {
+        type: 'job.failed',
+        createdAt: job.finishedAt,
+        teamId: agent.teamId,
+        agentId: agent.id,
+        jobId: job.id,
+        detail: { error: message.slice(0, 2048) },
+      });
+    });
   }
 
   async shutdown(reason = 'Execution owner shut down'): Promise<void> {
