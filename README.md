@@ -264,6 +264,30 @@ These mappings are intentionally conservative and are not identical security mod
 - persistent named roles and reusable team templates
 - package publishing and one-command MCP registration
 
+## Real-provider validation
+
+Normal CI uses deterministic fake provider executables and never consumes Codex, Claude Code, or Antigravity quota. To validate the installed authenticated CLIs explicitly:
+
+```bash
+npm run e2e:real
+```
+
+The smoke harness detects installed providers, then sequentially verifies initial spawn and native-session resume using read-only prompts. Requests are spaced by 2 seconds by default to avoid aggressive traffic. Select providers explicitly with:
+
+```bash
+npm run e2e:real -- --providers codex,claude
+```
+
+Run the full heterogeneous parent/child matrix only when desired:
+
+```bash
+npm run e2e:real:matrix
+```
+
+Matrix mode exercises every selected cross-provider parent -> child pair, nested managed identity, wake/resume delegation, and delegation completion. It writes one machine-readable JSON report to stdout and uses a disposable local state/workspace. It never requests `full` access.
+
+Tune pacing and timeout with `AGENTMUX_E2E_DELAY_MS` and `AGENTMUX_E2E_TIMEOUT_MS`.
+
 ## License
 
 Apache-2.0
