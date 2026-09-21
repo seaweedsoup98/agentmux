@@ -1,11 +1,11 @@
-import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import spawn from 'cross-spawn';
 import type { CommandSpec, ProcessResult } from './types.js';
 
 const MAX_OUTPUT_CHARS = 4 * 1024 * 1024;
 
 export class ProcessRunner {
-  private readonly active = new Map<string, ChildProcessWithoutNullStreams>();
+  private readonly active = new Map<string, ChildProcess>();
 
   run(jobId: string, spec: CommandSpec): Promise<ProcessResult> {
     return new Promise((resolve, reject) => {
@@ -14,6 +14,15 @@ export class ProcessRunner {
         env: process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+      const stdoutStream = child.stdout;
+      const stderrStream = child.stderr;
+
+      if (!stdoutStream || !stderrStream) {
+        child.kill();
+        reject(new Error('Provider process did not expose stdout/stderr pipes'));
+        return;
+      }
+
       this.active.set(jobId, child);
 
       let stdout = '';
@@ -31,8 +40,8 @@ export class ProcessRunner {
         }
       };
 
-      child.stdout.on('data', (chunk: Buffer) => collect('stdout', chunk));
-      child.stderr.on('data', (chunk: Buffer) => collect('stderr', chunk));
+      stdoutStream.on('data', (chunk: Buffer) => collect('stdout', chunk));
+      stderrStream.on('data', (chunk: Buffer) => collect('stderr', chunk));
 
       child.once('error', (error) => {
         if (settled) return;
