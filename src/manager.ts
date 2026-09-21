@@ -966,7 +966,7 @@ export class AgentManager {
       };
     });
 
-    if (jobId) this.runner.cancel(jobId);
+    if (jobId) await this.execution.cancel(jobId);
     return agent;
   }
 
