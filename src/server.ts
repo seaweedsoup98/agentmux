@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { doctorProviders } from './doctor.js';
 import { AgentManager } from './manager.js';
-import { ACCESS_MODES, PROVIDERS, WORKSPACE_MODES } from './types.js';
+import { ACCESS_MODES, EVENT_TYPES, PROVIDERS, WORKSPACE_MODES } from './types.js';
 
 function text(value: unknown) {
   return {
@@ -27,7 +27,7 @@ export function buildServer(manager: AgentManager): McpServer {
         'Managed child agents should call whoami to discover their identity and team. Prefer message_send for attributed ' +
         'agent-to-agent communication; wake=true starts a new turn only when the recipient is idle and resumable. ' +
         'When a managed agent wakes a peer and needs that work to finish, it should wait for the returned wakeJob before ending its own turn. ' +
-        'Use inbox/message_ack for persisted messages. Prefer spawn_many for independent parallel tasks and wait instead ' +
+        'Use inbox/message_ack for persisted messages. Use events/events_wait to observe durable orchestration history across hosts. Prefer spawn_many for independent parallel tasks and wait instead ' +
         'of tight result polling. Use read-only access for analysis/review unless edits are needed. Keep workspace=auto ' +
         'unless explicit isolation is required. Do not use full access unless the task requires it.',
     },
@@ -196,6 +196,70 @@ export function buildServer(manager: AgentManager): McpServer {
     async ({ message_ids }) => {
       try {
         return text(await manager.acknowledgeMessages(message_ids));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'events',
+    {
+      description:
+        'Read the durable orchestration event stream after a sequence number. Managed agents are restricted to their team.',
+      inputSchema: z.object({
+        after_seq: z.number().int().min(0).default(0),
+        team_id: z.string().min(1).optional(),
+        agent_id: z.string().min(1).optional(),
+        types: z.array(z.enum(EVENT_TYPES)).min(1).max(EVENT_TYPES.length).optional(),
+        limit: z.number().int().min(1).max(500).default(100),
+      }),
+    },
+    async ({ after_seq, team_id, agent_id, types, limit }) => {
+      try {
+        return text(
+          await manager.events({
+            afterSeq: after_seq,
+            teamId: team_id,
+            agentId: agent_id,
+            types,
+            limit,
+          }),
+        );
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'events_wait',
+    {
+      description:
+        'Long-poll the durable orchestration event stream until matching events arrive or the timeout expires.',
+      inputSchema: z.object({
+        after_seq: z.number().int().min(0).default(0),
+        team_id: z.string().min(1).optional(),
+        agent_id: z.string().min(1).optional(),
+        types: z.array(z.enum(EVENT_TYPES)).min(1).max(EVENT_TYPES.length).optional(),
+        limit: z.number().int().min(1).max(500).default(100),
+        timeout_ms: z.number().int().min(0).max(60_000).default(30_000),
+      }),
+    },
+    async ({ after_seq, team_id, agent_id, types, limit, timeout_ms }) => {
+      try {
+        return text(
+          await manager.waitEvents(
+            {
+              afterSeq: after_seq,
+              teamId: team_id,
+              agentId: agent_id,
+              types,
+              limit,
+            },
+            timeout_ms,
+          ),
+        );
       } catch (error) {
         return failure(error);
       }
