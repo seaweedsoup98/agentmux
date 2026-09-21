@@ -41,16 +41,27 @@ for (const required of ['dist', 'plugins', '.agents', '.claude-plugin', 'README.
   }
 }
 
-const launchFiles = [
-  'src/setup.ts',
+const expectedSpec = pkg.name + '@latest';
+
+const setupText = await readFile('src/setup.ts', 'utf8');
+if (
+  !setupText.includes("packageJson.name") ||
+  !setupText.includes("+ '@latest'")
+) {
+  errors.push(
+    'src/setup.ts must derive the npx package spec from package.json.name.',
+  );
+}
+if (setupText.includes("'agentmux@latest'") || setupText.includes('"agentmux@latest"')) {
+  errors.push('src/setup.ts still contains a stale unscoped agentmux@latest reference.');
+}
+
+for (const path of [
   'plugins/codex/mcp.json',
   'plugins/codex/.mcp.json',
   'plugins/claude/.mcp.json',
   'plugins/antigravity/mcp_config.json',
-];
-
-const expectedSpec = pkg.name + '@latest';
-for (const path of launchFiles) {
+]) {
   const text = await readFile(path, 'utf8');
   if (!text.includes(expectedSpec)) {
     errors.push(
@@ -60,6 +71,14 @@ for (const path of launchFiles) {
         '.',
     );
   }
+}
+
+const readme = await readFile('README.md', 'utf8');
+if (!readme.includes(expectedSpec)) {
+  errors.push('README.md must document the published npm package spec.');
+}
+if (readme.includes('npx -y agentmux@latest')) {
+  errors.push('README.md still contains the stale unscoped npm package spec.');
 }
 
 if (errors.length > 0) {
