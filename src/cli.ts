@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { doctorHosts, doctorProviders } from './doctor.js';
+import { installNativePlugins } from './plugin-install.js';
 import { parseHostList, runSetup } from './setup.js';
 
 export const CLI_COMMANDS = new Set([
@@ -89,6 +90,78 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 
   if (command === 'plugins') {
+    const subcommand = argv[1] ?? 'show';
+
+    if (subcommand === 'install') {
+      const hostsRaw = valuesAfter(argv, '--hosts');
+      const result = await installNativePlugins({
+        hosts: hostsRaw ? parseHostList(hostsRaw.join(',')) : undefined,
+        dryRun: argv.includes('--dry-run'),
+        replaceMcp: argv.includes('--replace-mcp'),
+      });
+
+      process.stdout.write('agentmux native plugins\n\n');
+      for (const action of result.actions) {
+        const mark =
+          action.status === 'installed'
+            ? '✓'
+            : action.status === 'planned'
+              ? '→'
+              : action.status === 'skipped'
+                ? '-'
+                : '✗';
+        process.stdout.write(
+          mark +
+            ' ' +
+            label(action.host) +
+            ': ' +
+            (action.detail ?? action.status) +
+            '\n',
+        );
+        if (action.status === 'planned') {
+          for (const command of action.commands) {
+            process.stdout.write('    ' + command + '\n');
+          }
+        }
+      }
+
+      if (result.selectedHosts.length === 0) {
+        process.stdout.write(
+          'No installed plugin host was detected. Use --hosts to request a specific host.\n',
+        );
+      }
+
+      process.stdout.write(
+        '\nRestart/open a new agent session after plugin installation so bundled skills and MCP tools are loaded.\n',
+      );
+      return result.ok ? 0 : 1;
+    }
+
+    if (subcommand === 'status') {
+      const providers = await doctorProviders();
+      const hosts = await doctorHosts(providers);
+      process.stdout.write('agentmux native plugin status\n\n');
+      for (const host of hosts) {
+        const status = !host.installed
+          ? 'host missing'
+          : host.pluginConfigured
+            ? 'plugin installed'
+            : host.mcpConfigured
+              ? 'direct MCP only'
+              : 'not installed';
+        process.stdout.write(pad(label(host.host), 16) + status + '\n');
+      }
+      return 0;
+    }
+
+    if (subcommand !== 'show') {
+      throw new Error(
+        'Unknown plugins subcommand: ' +
+          subcommand +
+          '. Use install, status, or show.',
+      );
+    }
+
     const root = fileURLToPath(new URL('../', import.meta.url));
     const codexPath = join(root, 'plugins', 'codex');
     const claudePath = join(root, 'plugins', 'claude');
@@ -98,20 +171,24 @@ export async function runCli(argv: string[]): Promise<number> {
       [
         'Native plugin bundles',
         '',
+        'Recommended:',
+        '  agentmux plugins install',
+        '  agentmux plugins install --hosts codex claude antigravity',
+        '  agentmux plugins install --hosts codex antigravity --replace-mcp',
+        '',
         'Codex / OpenAI: ' + codexPath,
         '  codex plugin marketplace add seaweedsoup98/agentmux --ref main',
-        '  Then install agentmux from /plugins.',
+        '  codex plugin add agentmux@agentmux',
         '',
         'Claude Code: ' + claudePath,
-        '  claude plugin marketplace add seaweedsoup98/agentmux',
+        '  claude plugin marketplace add seaweedsoup98/agentmux@main --scope user',
         '  claude plugin install agentmux@agentmux --scope user',
+        '  claude plugin enable agentmux@agentmux --scope user',
         '',
         'Antigravity: ' + antigravityPath,
         '  agy plugin install ' + JSON.stringify(antigravityPath),
         '',
         'Plugin MCP bundles launch: npx -y "@jiho.ko/agentmux@latest"',
-        'For local development checkouts, use direct "agentmux setup" instead.',
-        'Do not enable a native plugin and direct MCP registration for the same host unless duplicate tools are intentional.',
         '',
       ].join('\n'),
     );
@@ -171,7 +248,9 @@ function printHelp(): void {
       '  agentmux                 Start the MCP stdio server',
       '  agentmux setup           Configure installed agent UIs',
       '  agentmux doctor [--json] Check provider install/auth and MCP host status',
-      '  agentmux plugins         Show bundled native plugin paths',
+      '  agentmux plugins         Show native plugin installation paths',
+      '  agentmux plugins install Install native plugins into supported hosts',
+      '  agentmux plugins status  Show native-plugin/direct-MCP status',
       '',
       'Setup options:',
       '  --hosts <list>   codex,claude,antigravity (aliases: claude-code, agy)',
@@ -182,6 +261,7 @@ function printHelp(): void {
       '  agentmux setup --hosts codex,antigravity',
       '  agentmux setup --yes',
       '  agentmux setup --hosts claude --dry-run',
+      '  agentmux plugins install --hosts codex antigravity --replace-mcp',
       '',
     ].join('\n'),
   );
