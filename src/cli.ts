@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { doctorHosts, doctorProviders } from './doctor.js';
@@ -23,7 +24,10 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 
   if (command === '--version' || command === '-v') {
-    process.stdout.write('agentmux 0.1.0\n');
+    const pkg = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version?: string };
+    process.stdout.write('agentmux ' + (pkg.version ?? 'unknown') + '\n');
     return 0;
   }
 
