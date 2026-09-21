@@ -151,10 +151,10 @@ Runtime failures that look like missing executables or authentication errors inc
 The intended one-line path is:
 
 ```bash
-npx -y agentmux@latest setup
+npx -y @jiho.ko/agentmux@latest setup
 ```
 
-When setup is running from an npx cache, it registers `npx -y agentmux@latest` as the stable MCP launch command rather than pinning an ephemeral cache path.
+When setup is running from an npx cache, it registers `npx -y @jiho.ko/agentmux@latest` as the stable MCP launch command rather than pinning an ephemeral cache path.
 
 ## Native plugins
 
@@ -197,7 +197,7 @@ agy plugin install ./plugins/antigravity
 
 The plugin is then available across Antigravity surfaces that share the global plugin profile.
 
-All native plugin MCP definitions launch `npx -y agentmux@latest`; they are therefore publication-ready bundles and become the recommended install path after the npm package is published. For a development checkout before publication, use `agentmux setup` instead.
+All native plugin MCP definitions launch `npx -y @jiho.ko/agentmux@latest`; they are therefore publication-ready bundles and become the recommended install path after the npm package is published. For a development checkout before publication, use `agentmux setup` instead.
 
 ## Development
 
