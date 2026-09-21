@@ -5,6 +5,7 @@ import { delimiter, join } from 'node:path';
 import test from 'node:test';
 import { AgentManager } from '../src/manager.js';
 import { StateStore } from '../src/state.js';
+import { writeFakeCommand } from './helpers.js';
 
 async function waitOne(manager: AgentManager, jobId: string) {
   const result = await manager.wait([jobId], 4000);
@@ -20,10 +21,7 @@ test('managed agents inherit identity and exchange persisted messages', async ()
   await mkdir(bin);
   await mkdir(cwd);
 
-  const fakeCodex = join(bin, 'codex');
-  await writeFile(
-    fakeCodex,
-    `#!/usr/bin/env node
+  await writeFakeCommand(bin, 'codex', `#!/usr/bin/env node
 const resumed = process.argv.includes('resume');
 const agent = process.env.AGENTMUX_AGENT_ID || 'missing';
 const team = process.env.AGENTMUX_TEAM_ID || 'missing';
@@ -38,9 +36,7 @@ console.log(JSON.stringify({
   }
 }));
 console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
-`,
-  );
-  await chmod(fakeCodex, 0o755);
+`);
 
   const previousPath = process.env.PATH;
   process.env.PATH = bin + delimiter + (previousPath ?? '');
@@ -164,17 +160,12 @@ test('managed spawn automatically creates a child relationship in the same team'
   await mkdir(bin);
   await mkdir(cwd);
 
-  const fakeCodex = join(bin, 'codex');
-  await writeFile(
-    fakeCodex,
-    `#!/usr/bin/env node
+  await writeFakeCommand(bin, 'codex', `#!/usr/bin/env node
 const agent = process.env.AGENTMUX_AGENT_ID || 'missing';
 console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-' + agent }));
 console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));
 console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
-`,
-  );
-  await chmod(fakeCodex, 0o755);
+`);
 
   const previousPath = process.env.PATH;
   process.env.PATH = bin + delimiter + (previousPath ?? '');

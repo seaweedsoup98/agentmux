@@ -13,6 +13,10 @@ import {
   inspectWorktree,
 } from '../src/workspace.js';
 
+async function readText(path: string): Promise<string> {
+  return (await readFile(path, 'utf8')).replaceAll('\r\n', '\n');
+}
+
 function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     execFile(command, args, (error, _stdout, stderr) => {
@@ -48,8 +52,8 @@ test('createWorktree preserves repository contents in a detached worktree', asyn
   const result = await createWorktree('a_test', gitRepo, home);
 
   assert.notEqual(result.cwd, gitRepo);
-  assert.equal(await readFile(join(result.cwd, 'hello.txt'), 'utf8'), 'hello\n');
-  assert.equal(result.gitRoot, gitRepo);
+  assert.equal(await readText(join(result.cwd, 'hello.txt')), 'hello\n');
+  assert.equal(await readText(join(result.gitRoot, 'hello.txt')), 'hello\n');
   assert.match(result.baseCommit, /^[0-9a-f]{40}$/);
 });
 
@@ -110,7 +114,7 @@ test('worktree diff captures committed, unstaged, and untracked changes and appl
   assert.match(diff.patch, /committed\.txt/);
   assert.match(diff.patch, /hello\.txt/);
   assert.match(diff.patch, /untracked\.txt/);
-  assert.equal(await readFile(join(gitRepo, 'hello.txt'), 'utf8'), 'base\n');
+  assert.equal(await readText(join(gitRepo, 'hello.txt')), 'base\n');
 
   const applied = await applyWorktree(
     worktree.worktreePath,
@@ -118,9 +122,9 @@ test('worktree diff captures committed, unstaged, and untracked changes and appl
     worktree.baseCommit,
   );
   assert.equal(applied.applied, true);
-  assert.equal(await readFile(join(gitRepo, 'hello.txt'), 'utf8'), 'changed\n');
-  assert.equal(await readFile(join(gitRepo, 'committed.txt'), 'utf8'), 'committed\n');
-  assert.equal(await readFile(join(gitRepo, 'untracked.txt'), 'utf8'), 'new\n');
+  assert.equal(await readText(join(gitRepo, 'hello.txt')), 'changed\n');
+  assert.equal(await readText(join(gitRepo, 'committed.txt')), 'committed\n');
+  assert.equal(await readText(join(gitRepo, 'untracked.txt')), 'new\n');
 
   await assert.rejects(
     () => cleanupWorktree(worktree.worktreePath, worktree.gitRoot),

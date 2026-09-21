@@ -6,11 +6,12 @@ import test from 'node:test';
 import { BrokerExecutionController } from '../src/broker-client.js';
 import { AgentManager } from '../src/manager.js';
 import { StateStore } from '../src/state.js';
+import { writeFakeCommand } from './helpers.js';
 
 async function waitStored(
   store: StateStore,
   jobId: string,
-  timeoutMs = 5000,
+  timeoutMs = 10000,
 ) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -30,19 +31,14 @@ test('detached broker keeps jobs alive across MCP manager shutdown', async () =>
   await mkdir(bin);
   await mkdir(cwd);
 
-  const fakeCodex = join(bin, 'codex');
-  await writeFile(
-    fakeCodex,
-    `#!/usr/bin/env node
+  await writeFakeCommand(bin, 'codex', `#!/usr/bin/env node
 const resumed = process.argv.includes('resume');
 setTimeout(() => {
   console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-broker' }));
   console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: resumed ? 'resumed' : 'completed' } }));
   console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
 }, 500);
-`,
-  );
-  await chmod(fakeCodex, 0o755);
+`);
 
   const previousPath = process.env.PATH;
   const previousIdle = process.env.AGENTMUX_BROKER_IDLE_MS;

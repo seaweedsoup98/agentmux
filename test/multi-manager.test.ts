@@ -6,6 +6,7 @@ import { delimiter, join } from 'node:path';
 import test from 'node:test';
 import { AgentManager } from '../src/manager.js';
 import { StateStore } from '../src/state.js';
+import { writeFakeCommand } from './helpers.js';
 
 function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -42,10 +43,7 @@ test('independent managers share sessions and isolate concurrent writers', async
   await run('git', ['-C', repo, 'add', 'tracked.txt']);
   await run('git', ['-C', repo, 'commit', '-m', 'initial']);
 
-  const fakeCodex = join(bin, 'codex');
-  await writeFile(
-    fakeCodex,
-    `#!/usr/bin/env node
+  await writeFakeCommand(bin, 'codex', `#!/usr/bin/env node
 const resumed = process.argv.includes('resume');
 setTimeout(() => {
   console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-shared' }));
@@ -56,9 +54,7 @@ setTimeout(() => {
   }));
   console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
 }, 900);
-`,
-  );
-  await chmod(fakeCodex, 0o755);
+`);
 
   const previousPath = process.env.PATH;
   process.env.PATH = bin + delimiter + (previousPath ?? '');
