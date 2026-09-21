@@ -41,7 +41,7 @@ test('all native plugin bundles launch the published agentmux package', async ()
       { command: string; args: string[]; type?: string }
     >;
     assert.equal(servers.agentmux?.command, 'npx');
-    assert.deepEqual(servers.agentmux?.args, ['-y', 'agentmux@latest']);
+    assert.deepEqual(servers.agentmux?.args, ['-y', '@jiho.ko/agentmux@latest']);
     if (path.endsWith(join('codex', 'mcp.json'))) {
       assert.equal(servers.agentmux?.type, 'stdio');
       assert.equal(
