@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agentmux",
+  "description": "agentmux cross-provider coding-agent orchestration",
+  "owner": {
+    "name": "agentmux"
+  },
+  "plugins": [
+    {
+      "name": "agentmux",
+      "source": "./plugins/claude",
+      "description": "Use Codex, Claude Code, and Antigravity as heterogeneous subagents through agentmux.",
+      "version": "0.1.0",
+      "author": {
+        "name": "agentmux"
+      }
+    }
+  ]
+}
