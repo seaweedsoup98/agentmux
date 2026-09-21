@@ -187,7 +187,7 @@ export class StateStore {
 
     try {
       await writeFile(temporary, payload, { encoding: 'utf8', mode: 0o600 });
-      await rename(temporary, this.path);
+      await replaceFile(temporary, this.path);
     } finally {
       await rm(temporary, { force: true }).catch(() => undefined);
     }
@@ -209,5 +209,29 @@ export class StateStore {
         randomize: true,
       },
     });
+  }
+}
+
+
+async function replaceFile(source: string, destination: string): Promise<void> {
+  const retryable = new Set(['EPERM', 'EACCES', 'EBUSY']);
+  const attempts = process.platform === 'win32' ? 9 : 1;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (
+        attempt + 1 >= attempts ||
+        !code ||
+        !retryable.has(code)
+      ) {
+        throw error;
+      }
+      const delayMs = Math.min(250, 10 * 2 ** attempt);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
   }
 }
