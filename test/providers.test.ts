@@ -62,3 +62,50 @@ test('Antigravity parser extracts conversation id', () => {
     },
   );
 });
+
+
+test('Codex resume reapplies execution policy before the resume subcommand', () => {
+  const command = getProvider('codex').resume(
+    {
+      prompt: 'continue',
+      cwd: '/tmp/project',
+      access: 'read-only',
+      model: 'gpt-test',
+      effort: 'high',
+    },
+    'thread-1',
+  );
+
+  assert.deepEqual(command.args, [
+    'exec',
+    '--json',
+    '--sandbox',
+    'read-only',
+    '--model',
+    'gpt-test',
+    '-c',
+    'model_reasoning_effort="high"',
+    'resume',
+    'thread-1',
+    'continue',
+  ]);
+});
+
+test('Claude adapter applies model and effort on start and resume', () => {
+  const configured = {
+    prompt: 'hello',
+    cwd: '/tmp/project',
+    access: 'read-only' as const,
+    model: 'opus',
+    effort: 'high',
+  };
+  for (const command of [
+    getProvider('claude').start(configured),
+    getProvider('claude').resume(configured, 'session-1'),
+  ]) {
+    assert.ok(command.args.includes('--model'));
+    assert.ok(command.args.includes('opus'));
+    assert.ok(command.args.includes('--effort'));
+    assert.ok(command.args.includes('high'));
+  }
+});
