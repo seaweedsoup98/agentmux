@@ -186,3 +186,82 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
     process.env.PATH = previousPath;
   }
 });
+
+
+test('canceling an active delegation cancels its wake job', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-delegation-cancel-'));
+  const bin = join(root, 'bin');
+  const cwd = join(root, 'repo');
+  const statePath = join(root, 'state.json');
+  await mkdir(bin);
+  await mkdir(cwd);
+
+  const fakeCodex = join(bin, 'codex');
+  await writeFile(
+    fakeCodex,
+    `#!/usr/bin/env node
+const agent = process.env.AGENTMUX_AGENT_ID || 'missing';
+const resumed = process.argv.includes('resume');
+const emit = () => {
+  console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-' + agent }));
+  console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }));
+  console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
+};
+if (resumed) setTimeout(emit, 1500);
+else emit();
+`,
+  );
+  await chmod(fakeCodex, 0o755);
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + delimiter + (previousPath ?? '');
+
+  try {
+    const external = await AgentManager.create(new StateStore(statePath), undefined);
+    const team = await external.createTeam({ name: 'cancel' });
+    const sender = await external.spawn({
+      provider: 'codex',
+      prompt: 'sender',
+      cwd,
+      access: 'read-only',
+      teamId: team.id,
+    });
+    const receiver = await external.spawn({
+      provider: 'codex',
+      prompt: 'receiver',
+      cwd,
+      access: 'read-only',
+      teamId: team.id,
+    });
+    await waitOne(external, sender.job.id);
+    await waitOne(external, receiver.job.id);
+
+    const senderManager = await AgentManager.create(
+      new StateStore(statePath),
+      sender.agent.id,
+    );
+    const delegated = await senderManager.delegate(
+      receiver.agent.id,
+      'long delegated task',
+      true,
+    );
+    assert.ok(delegated.wakeJob);
+    assert.equal(delegated.delegation.status, 'active');
+
+    const canceled = await senderManager.cancelDelegation(delegated.delegation.id);
+    assert.equal(canceled.status, 'canceled');
+
+    const wakeResult = await waitOne(external, delegated.wakeJob!.id);
+    assert.equal(wakeResult.status, 'canceled');
+    assert.match(wakeResult.error ?? '', /Canceled with delegation/);
+
+    const receiverStatus = await external.status(receiver.agent.id);
+    assert.equal(receiverStatus.agent.status, 'idle');
+    assert.equal(receiverStatus.agent.activeJobId, undefined);
+
+    await senderManager.shutdown();
+    await external.shutdown();
+  } finally {
+    process.env.PATH = previousPath;
+  }
+});
