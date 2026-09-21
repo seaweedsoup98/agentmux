@@ -299,10 +299,22 @@ function requireResponse(job: AgentJob, expected: string): void {
 function parseProviders(argv: string[]): ProviderName[] | undefined {
   const index = argv.indexOf('--providers');
   if (index < 0) return undefined;
-  const raw = argv[index + 1];
-  if (!raw) throw new Error('--providers requires a comma-separated value');
 
-  const values = raw.split(',').map((value) => value.trim()).filter(Boolean);
+  const rawValues: string[] = [];
+  for (let cursor = index + 1; cursor < argv.length; cursor += 1) {
+    const value = argv[cursor];
+    if (!value || value.startsWith('-')) break;
+    rawValues.push(value);
+  }
+  if (rawValues.length === 0) {
+    throw new Error('--providers requires at least one value');
+  }
+
+  const values = rawValues
+    .join(',')
+    .split(/[\s,;]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
   const invalid = values.filter(
     (value) => !(PROVIDERS as readonly string[]).includes(value),
   );
