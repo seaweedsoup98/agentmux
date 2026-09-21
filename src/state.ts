@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import lockfile from 'proper-lockfile';
 import type { AgentJob, AgentSession, AgentmuxState } from './types.js';
 
 interface LegacyStateV1 {
@@ -17,15 +18,37 @@ export function agentmuxHome(): string {
 
 export class StateStore {
   readonly path: string;
-  private writeQueue: Promise<void> = Promise.resolve();
+  readonly lockPath: string;
 
   constructor(path = join(agentmuxHome(), 'state.json')) {
     this.path = path;
+    this.lockPath = path + '.lock';
   }
 
   async load(): Promise<AgentmuxState> {
+    return this.loadUnlocked();
+  }
+
+  async transaction<T>(
+    mutate: (state: AgentmuxState) => T | Promise<T>,
+  ): Promise<T> {
+    const release = await this.acquireLock();
     try {
-      const value = JSON.parse(await readFile(this.path, 'utf8')) as AgentmuxState | LegacyStateV1;
+      const state = await this.loadUnlocked();
+      const result = await mutate(state);
+      await this.writeUnlocked(state);
+      return result;
+    } finally {
+      await release();
+    }
+  }
+
+  private async loadUnlocked(): Promise<AgentmuxState> {
+    try {
+      const value = JSON.parse(
+        await readFile(this.path, 'utf8'),
+      ) as AgentmuxState | LegacyStateV1;
+
       if (value.version === 1 && value.agents && value.jobs) {
         return { version: 2, agents: value.agents, jobs: value.jobs, teams: {} };
       }
@@ -41,15 +64,36 @@ export class StateStore {
     }
   }
 
-  save(state: AgentmuxState): Promise<void> {
+  private async writeUnlocked(state: AgentmuxState): Promise<void> {
+    const directory = dirname(this.path);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const temporary =
+      this.path + '.' + process.pid + '.' + Date.now().toString(36) + '.tmp';
     const payload = JSON.stringify(state, null, 2) + '\n';
-    this.writeQueue = this.writeQueue.then(async () => {
-      const directory = dirname(this.path);
-      await mkdir(directory, { recursive: true, mode: 0o700 });
-      const temporary = this.path + '.' + process.pid + '.tmp';
+
+    try {
       await writeFile(temporary, payload, { encoding: 'utf8', mode: 0o600 });
       await rename(temporary, this.path);
+    } finally {
+      await rm(temporary, { force: true }).catch(() => undefined);
+    }
+  }
+
+  private async acquireLock(): Promise<() => Promise<void>> {
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+
+    return lockfile.lock(this.path, {
+      realpath: false,
+      lockfilePath: this.lockPath,
+      stale: 30_000,
+      update: 10_000,
+      retries: {
+        retries: 80,
+        factor: 1.2,
+        minTimeout: 25,
+        maxTimeout: 250,
+        randomize: true,
+      },
     });
-    return this.writeQueue;
   }
 }

@@ -13,7 +13,7 @@ async function waitForJob(
 ) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const job = manager.result(jobId);
+    const job = await manager.result(jobId);
     if (job.status !== 'running') return job;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
@@ -58,13 +58,13 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
     const first = await waitForJob(manager, job.id);
     assert.equal(first.status, 'succeeded');
     assert.equal(first.response, 'first');
-    assert.equal(manager.status(agent.id).agent.nativeSessionId, 'thread-test');
+    assert.equal((await manager.status(agent.id)).agent.nativeSessionId, 'thread-test');
 
     const followUp = await manager.send(agent.id, 'second prompt');
     const second = await waitForJob(manager, followUp.id);
     assert.equal(second.status, 'succeeded');
     assert.equal(second.response, 'follow-up');
-    assert.equal(manager.status(agent.id).agent.status, 'idle');
+    assert.equal((await manager.status(agent.id)).agent.status, 'idle');
 
     const batch = await manager.spawnMany([
       {
@@ -116,7 +116,7 @@ test('teams record external-host supervision and parent-child relationships', as
   const manager = await AgentManager.create(new StateStore(join(root, 'state.json')));
 
   const team = await manager.createTeam({ name: 'review' });
-  const status = manager.teamStatus(team.id);
+  const status = await manager.teamStatus(team.id);
 
   assert.equal(status.team.name, 'review');
   assert.equal(status.team.supervisorAgentId, undefined);

@@ -56,7 +56,7 @@ agentmux team
 
 A managed agent can also be recorded as the supervisor of another agent. `spawn` accepts `team_id` and `parent_agent_id`, so nested supervision can be represented in the state model without changing provider adapters.
 
-> **MVP limitation:** use one agentmux MCP process as the control tower for a team. Multiple agentmux server processes do not yet coordinate writes to the same state store, so recursive/nested delegation where child hosts invoke their own agentmux instance is not yet supported.
+Multiple agentmux MCP processes on the same machine can share this state safely. State mutations are serialized with an inter-process filesystem lock and committed by atomic replacement, while each job records the process/instance that owns its running provider subprocess. This allows, for example, a Codex host to discover and resume a session originally created from Claude Code.
 
 ## Requirements
 
@@ -130,6 +130,8 @@ npm run dev
 
 The server stores local session metadata in `~/.agentmux/state.json`. Override that directory with `AGENTMUX_HOME`.
 
+The state store is shared across local agentmux MCP processes. Reads use fresh snapshots; mutations use a process-safe lock plus atomic file replacement. A running job records its owner PID/instance so starting another MCP host does not incorrectly recover or overwrite work owned by a live host.
+
 ## Example
 
 Once the MCP server is registered in your host, you can ask the host agent naturally:
@@ -175,8 +177,8 @@ These mappings are intentionally conservative and are not identical security mod
 ## Roadmap
 
 - worktree cleanup and merge helpers
-- process-safe local broker for multiple MCP hosts
 - agent-to-agent message routing and inboxes
+- explicit handoff/delegation history across MCP hosts
 - streaming progress and richer tool events
 - persistent named roles and reusable team templates
 - package publishing and one-command MCP registration
