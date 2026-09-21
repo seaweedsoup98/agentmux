@@ -1,6 +1,10 @@
 name: Publish npm package
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
   workflow_dispatch:
     inputs:
       dry_run:
@@ -12,6 +16,10 @@ on:
 permissions:
   contents: read
   id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -27,6 +35,58 @@ jobs:
       - run: npm run check
       - run: npm run release:check
       - run: npm pack --dry-run
+
+      - name: Check release version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Automatic publishing only supports stable x.y.z versions. Got $VERSION"
+            exit 1
+          fi
+
+          if ! grep -Fq "## $VERSION" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md must contain a '## $VERSION' section before publishing."
+            exit 1
+          fi
+
+          if npm view "$NAME@$VERSION" version --json > exact-version.json 2> exact-version.err; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Version $NAME@$VERSION is already published; publish step will be skipped."
+          elif grep -q "E404" exact-version.err; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            cat exact-version.err >&2
+            exit 1
+          fi
+
+          LATEST="$(npm view "$NAME" version)"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+
+          if [[ "$VERSION" != "$LATEST" && "$(printf '%s\n%s\n' "$LATEST" "$VERSION" | sort -V | tail -n1)" != "$VERSION" ]]; then
+            echo "::error::package.json version $VERSION must be newer than npm latest $LATEST."
+            exit 1
+          fi
+
       - name: Publish with npm trusted publishing
-        if: ${{ !inputs.dry_run }}
+        if: ${{ steps.release.outputs.published == 'false' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)) }}
         run: npm publish
+
+      - name: Release summary
+        if: always()
+        shell: bash
+        run: |
+          echo "### npm release" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Package: ${{ steps.release.outputs.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version: ${{ steps.release.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- npm latest before run: ${{ steps.release.outputs.latest }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Already published: ${{ steps.release.outputs.published }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Event: ${{ github.event_name }}" >> "$GITHUB_STEP_SUMMARY"
