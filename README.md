@@ -30,8 +30,8 @@ The MCP server exposes a provider-neutral session API:
 - `list` — list local sessions
 - `kill` — cancel an active job and stop the session
 - `team_create`, `team_status`, `team_list` — group sessions and record supervision
-- `providers` — show runtime adapters
-- `doctor` — detect installed provider CLIs and versions
+- `providers` — show supported runtime adapters
+- `doctor` — report provider install/auth health and MCP-host configuration
 
 Provider sessions are preserved using their native IDs:
 
@@ -71,58 +71,131 @@ If the broker cannot start, agentmux falls back to MCP-owned execution and repor
 ## Requirements
 
 - Node.js 20+
-- At least one supported CLI installed and authenticated: `codex`, `claude`, or `agy`
-- Git only when using worktree isolation/integration
+- Provider CLIs are optional. Install only the workers you actually plan to use: `codex`, `claude`, and/or `agy`.
+- Git is needed only for worktree isolation/integration.
 
-## Install from a local checkout
+A valid installation can therefore be Codex + Antigravity only, Claude Code only, or even agentmux with no provider installed yet.
 
-Until the package is published to npm, build a local checkout first:
+## Install and configure
+
+### Local checkout today
+
+Until the npm package is published, build and link the checkout once:
 
 ```bash
 git clone https://github.com/seaweedsoup98/agentmux.git
 cd agentmux
 npm install
 npm run build
+npm link
 ```
 
-Then register the built stdio server with whichever coding-agent UI you want to use as the control tower.
-
-### Codex CLI
+Then configure only the agent UIs you want to use:
 
 ```bash
-codex mcp add agentmux -- node /absolute/path/to/agentmux/dist/index.js
-codex mcp list
+agentmux setup
 ```
 
-Codex CLI and the Codex IDE/desktop surfaces on the same host share Codex MCP configuration.
-
-### Claude Code
+Interactive setup detects installed Codex, Claude Code, and Antigravity hosts and asks which ones to configure. Non-interactive examples:
 
 ```bash
-claude mcp add agentmux --scope user -- node /absolute/path/to/agentmux/dist/index.js
-claude mcp list
+agentmux setup --hosts codex,antigravity
+agentmux setup --hosts claude
+agentmux setup --yes
+agentmux setup --hosts codex,antigravity --dry-run
 ```
 
-Remove `--scope user` if you only want the server registered for the current project.
+The setup command uses native host configuration paths:
 
-### Antigravity CLI
+- Codex: `codex mcp add`
+- Claude Code: user-scoped `claude mcp add`
+- Antigravity: merges only `mcpServers.agentmux` into `~/.gemini/config/mcp_config.json`
 
-Open `/mcp` and add a local stdio server, or add it to `~/.gemini/config/mcp_config.json`:
+Existing Antigravity MCP entries and unrelated JSON keys are preserved. If a native agentmux plugin is already installed for a host, setup does not add a second direct MCP registration.
 
-```json
-{
-  "mcpServers": {
-    "agentmux": {
-      "command": "node",
-      "args": ["/absolute/path/to/agentmux/dist/index.js"]
-    }
-  }
-}
+Verify the machine afterwards:
+
+```bash
+agentmux doctor
+agentmux doctor --json
 ```
 
-A workspace-only Antigravity configuration can instead live at `.agents/mcp_config.json`.
+### Provider health and authentication
 
-On Windows, forward-slash paths such as `C:/code/agentmux/dist/index.js` are convenient inside JSON.
+`agentmux doctor` separates installation from authentication instead of treating every provider as a required dependency.
+
+Typical states:
+
+- `ready`: CLI installed and its non-inference authentication status says it is logged in.
+- `auth_required`: CLI installed but login is required.
+- `installed`: CLI installed, but authentication cannot be verified without a real model request.
+- `missing`: CLI is not installed.
+- `unhealthy`: the status probe itself failed unexpectedly.
+
+Codex uses `codex login status`; Claude Code uses `claude auth status`. Antigravity has no documented zero-cost shell auth-status command, so doctor reports its auth as `unknown` rather than consuming quota or opening a browser. A real headless Antigravity run is the authoritative check.
+
+If authentication expires, agentmux does not store or repair provider credentials. Re-authenticate with the provider itself:
+
+```text
+Codex:       codex login
+Claude Code: claude auth login
+Antigravity: run agy interactively once and complete sign-in
+```
+
+Runtime failures that look like missing executables or authentication errors include the corresponding remediation hint.
+
+### After npm publication
+
+The intended one-line path is:
+
+```bash
+npx -y agentmux@latest setup
+```
+
+When setup is running from an npx cache, it registers `npx -y agentmux@latest` as the stable MCP launch command rather than pinning an ephemeral cache path.
+
+## Native plugins
+
+The repository also ships native plugin bundles for all three ecosystems. Plugins and direct `agentmux setup` registration are alternative integration methods; do not enable both for the same host unless you intentionally want duplicate tool surfaces.
+
+Show the bundled plugin paths:
+
+```bash
+agentmux plugins
+```
+
+### Codex / OpenAI plugin
+
+The repository exposes a Codex marketplace in `.agents/plugins/marketplace.json`. Add it with:
+
+```bash
+codex plugin marketplace add seaweedsoup98/agentmux --ref main
+```
+
+Then install `agentmux` from `/plugins` in a supported Codex surface. The plugin bundle lives under `plugins/codex`.
+
+### Claude Code plugin
+
+The repository is also a Claude Code plugin marketplace:
+
+```bash
+claude plugin marketplace add seaweedsoup98/agentmux
+claude plugin install agentmux@agentmux --scope user
+```
+
+The Claude plugin lives under `plugins/claude`.
+
+### Antigravity plugin
+
+Antigravity can install the local plugin bundle directly:
+
+```bash
+agy plugin install ./plugins/antigravity
+```
+
+The plugin is then available across Antigravity surfaces that share the global plugin profile.
+
+All native plugin MCP definitions launch `npx -y agentmux@latest`; they are therefore publication-ready bundles and become the recommended install path after the npm package is published. For a development checkout before publication, use `agentmux setup` instead.
 
 ## Development
 
@@ -272,7 +345,7 @@ Named roles remain lightweight session metadata instead of persistent templates.
 
 ## Real-provider validation
 
-Normal CI uses deterministic fake provider executables and never consumes Codex, Claude Code, or Antigravity quota. To validate the installed authenticated CLIs explicitly:
+Normal CI uses deterministic fake provider executables and never consumes Codex, Claude Code, or Antigravity quota. Providers reported as `auth_required` are excluded from the default real-provider smoke run rather than making an otherwise valid partial installation fail. To validate installed authenticated CLIs explicitly:
 
 ```bash
 npm run e2e:real
