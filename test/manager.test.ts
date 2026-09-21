@@ -35,6 +35,14 @@ const resumed = process.argv.includes('resume');
 console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-test' }));
 console.log(JSON.stringify({ type: 'turn.started' }));
 console.log(JSON.stringify({
+  type: 'item.started',
+  item: { id: 'cmd-1', type: 'command_execution' }
+}));
+console.log(JSON.stringify({
+  type: 'item.completed',
+  item: { id: 'cmd-1', type: 'command_execution' }
+}));
+console.log(JSON.stringify({
   type: 'item.completed',
   item: { type: 'agent_message', text: resumed ? 'follow-up' : 'first' }
 }));
@@ -59,6 +67,15 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
     assert.equal(first.status, 'succeeded');
     assert.equal(first.response, 'first');
     assert.equal((await manager.status(agent.id)).agent.nativeSessionId, 'thread-test');
+    const progress = await manager.events({
+      agentId: agent.id,
+      types: ['provider.tool_started', 'provider.tool_completed'],
+    });
+    assert.deepEqual(
+      progress.map((event) => event.type),
+      ['provider.tool_started', 'provider.tool_completed'],
+    );
+    assert.equal(progress[0]?.detail?.label, 'command_execution');
 
     const followUp = await manager.send(agent.id, 'second prompt');
     const second = await waitForJob(manager, followUp.id);
