@@ -439,9 +439,11 @@ cleanup은 session이 종료된 뒤에만 가능하고, dirty isolated worktree�
 
 | agentmux | Codex | Claude Code | Antigravity |
 | --- | --- | --- | --- |
-| `read-only` | `read-only` sandbox | `plan` permission mode | `plan` mode + terminal sandbox |
+| `read-only` | `read-only` sandbox | `plan` permission mode | `plan` + sandbox + read-only tool profile |
 | `workspace-write` | `workspace-write` sandbox | `acceptEdits` | `accept-edits` + terminal sandbox |
 | `full` | `danger-full-access` | permission prompt 생략 | `accept-edits` + permission prompt 생략 |
+
+Antigravity의 `read-only`는 plugin에 포함된 `agentmux-readonly` custom agent를 사용합니다. 이 profile에는 repository를 읽기 위한 native tool(`view_file`, `list_dir`, `find_by_name`, `grep_search`)만 노출되고, `run_command`와 모든 파일 쓰기 tool은 제외됩니다. 따라서 headless 환경에서 단순 파일 읽기를 위해 shell command 승인을 요구하는 경로를 피하면서 실제 read-only 검토를 유지합니다.
 
 이 매핑은 의도적으로 보수적으로 설계되어 있으며 provider 간 security model이 완전히 동일하다는 뜻은 아닙니다.
 
