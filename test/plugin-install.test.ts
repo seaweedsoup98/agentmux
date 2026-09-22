@@ -63,7 +63,18 @@ if (args[0] === 'mcp' && args[1] === 'list') {
 if (args[0] === 'plugin' && args[1] === 'list') process.exit(0);
 fs.appendFileSync(${logLiteral}, 'claude ' + JSON.stringify(args) + '\\n');
 if (args[0] === 'plugin' && args[1] === 'marketplace' && args[2] === 'add') process.exit(0);
-if (args[0] === 'plugin' && args[1] === 'install') process.exit(0);
+if (args[0] === 'plugin' && args[1] === 'install') {
+  const source = args[2] || '';
+  if (source.includes('@')) {
+    console.error('Error: unknown marketplace: ' + source);
+    process.exit(1);
+  }
+  if (!fs.existsSync(path.join(source, 'plugin.json'))) {
+    console.error('plugin.json missing from staged plugin');
+    process.exit(1);
+  }
+  process.exit(0);
+}
 if (args[0] === 'plugin' && args[1] === 'enable') process.exit(0);
 if (args[0] === 'mcp' && args[1] === 'remove') process.exit(0);
 process.exit(2);
@@ -71,6 +82,7 @@ process.exit(2);
 
   await writeFakeCommand(bin, 'agy', `#!/usr/bin/env node
 const fs = require('node:fs');
+const path = require('node:path');
 const args = process.argv.slice(2);
 if (args[0] === '--version') {
   console.log('agy 7.7.7');
@@ -135,7 +147,12 @@ process.exit(2);
       ),
     );
 
-    assert.ok(log.includes('agy ["plugin","install",'));
+    const agyInstallLine = log
+      .split('\n')
+      .find((line) => line.startsWith('agy ["plugin","install",'));
+    assert.ok(agyInstallLine);
+    assert.match(agyInstallLine, /agentmux-antigravity-plugin-/);
+    assert.ok(!agyInstallLine.includes('@jiho.ko'));
     assert.ok(log.includes('agy ["plugin","enable","agentmux"]'));
 
     const config = JSON.parse(await readFile(agyConfigPath, 'utf8')) as {
