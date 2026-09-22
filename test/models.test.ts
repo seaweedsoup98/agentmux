@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { delimiter, dirname, join } from 'node:path';
 import test from 'node:test';
 import {
+  inspectProviderModels,
   parseAntigravityModels,
   resolveModelFromCatalog,
+  resolveProviderModel,
 } from '../src/models.js';
+import { writeFakeCommand } from './helpers.js';
 
 const sample = [
   'gemini-3.8-flash-high     Gemini 3.8 Flash (High)',
@@ -68,4 +74,40 @@ test('does not silently map an unknown AGY model', () => {
 
   assert.equal(result.resolved, undefined);
   assert.equal(result.ambiguous, undefined);
+});
+
+
+test('queries the installed AGY CLI and resolves an informal model request', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-models-'));
+  const bin = join(root, 'bin');
+  await mkdir(bin);
+
+  await writeFakeCommand(bin, 'agy', `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'models') {
+  process.stdout.write(${JSON.stringify(sample + '\\n')});
+  process.exit(0);
+}
+process.exit(2);
+`);
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
+
+  try {
+    assert.equal(
+      await resolveProviderModel('antigravity', 'agy 3.8 flash high'),
+      'gemini-3.8-flash-high',
+    );
+
+    const catalog = await inspectProviderModels(
+      'antigravity',
+      'Gemini 3.8 Flash High',
+    );
+    assert.equal(catalog.discovery, 'dynamic');
+    assert.equal(catalog.resolved?.id, 'gemini-3.8-flash-high');
+    assert.equal(catalog.models.length, 4);
+  } finally {
+    process.env.PATH = previousPath;
+  }
 });
