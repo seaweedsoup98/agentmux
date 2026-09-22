@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.4
+
+### Antigravity read-only execution
+- Fix headless AGY read-only reviews that attempted repository reads through `run_command` and were soft-denied by the headless permission policy.
+- Bundle an `agentmux-readonly` Antigravity custom agent exposing only `view_file`, `list_dir`, `find_by_name`, and `grep_search`.
+- Exclude shell execution and all file-writing tools from that profile while keeping `plan` mode and sandbox isolation.
+- Run every Antigravity `access=read-only` job with the bundled read-only custom agent.
+- Refresh an already-installed Antigravity plugin when `agentmux plugins install` is run again, so updated plugin assets are staged into the AGY profile.
+- Add regression tests for the read-only tool surface and existing-plugin refresh order.
+
 ## 0.1.3
 
 ### Model resolution
