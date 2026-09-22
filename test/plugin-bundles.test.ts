@@ -75,3 +75,22 @@ test('plugin manifests keep the integration surface intentionally small', async 
   assert.equal(claude.mcpServers, './.mcp.json');
   assert.equal(antigravity.name, 'agentmux');
 });
+
+
+test('Antigravity bundle includes a command-free read-only reviewer agent', async () => {
+  const source = await readFile(
+    join('plugins', 'antigravity', 'agents', 'agentmux-readonly.md'),
+    'utf8',
+  );
+
+  assert.match(source, /name:\s*agentmux-readonly/);
+  assert.match(source, /- view_file/);
+  assert.match(source, /- list_dir/);
+  assert.match(source, /- find_by_name/);
+  assert.match(source, /- grep_search/);
+  assert.doesNotMatch(source, /- run_command/);
+  assert.doesNotMatch(source, /- write_to_file/);
+  assert.doesNotMatch(source, /- replace_file_content/);
+  assert.doesNotMatch(source, /- multi_replace_file_content/);
+  assert.match(source, /commandExecutionPolicy:\s*off/);
+});

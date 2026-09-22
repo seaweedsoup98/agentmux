@@ -10,7 +10,7 @@
       "name": "agentmux",
       "source": "./plugins/claude",
       "description": "Use Codex, Claude Code, and Antigravity as heterogeneous subagents through agentmux.",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "author": {
         "name": "agentmux"
       }

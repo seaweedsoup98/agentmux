@@ -246,38 +246,52 @@ async function installOne(
     const bundlePath = fileURLToPath(
       new URL('../plugins/antigravity/', import.meta.url),
     );
+    const pluginUninstall = ['agy', 'plugin', 'uninstall', 'agentmux'];
+    const pluginInstall = [
+      'agy',
+      'plugin',
+      'install',
+      '<temporary-local-agentmux-plugin-path>',
+    ];
     const pluginEnable = ['agy', 'plugin', 'enable', 'agentmux'];
 
     if (options.dryRun) {
-      const pluginInstall = [
-        'agy',
-        'plugin',
-        'install',
-        '<temporary-local-agentmux-plugin-path>',
-      ];
+      if (pluginConfigured) commands.push(renderCommand(pluginUninstall));
       commands.push(renderCommand(pluginInstall), renderCommand(pluginEnable));
     } else {
-      if (!pluginConfigured) {
-        const stagingRoot = await mkdtemp(
-          join(tmpdir(), 'agentmux-antigravity-plugin-'),
-        );
-        const stagedBundle = join(stagingRoot, 'agentmux');
-        try {
-          await cp(bundlePath, stagedBundle, { recursive: true });
-          const pluginInstall = ['agy', 'plugin', 'install', stagedBundle];
-          commands.push(renderCommand(pluginInstall));
-          const plugin = await runCommand(
-            pluginInstall[0]!,
-            pluginInstall.slice(1),
+      const stagingRoot = await mkdtemp(
+        join(tmpdir(), 'agentmux-antigravity-plugin-'),
+      );
+      const stagedBundle = join(stagingRoot, 'agentmux');
+      try {
+        // Stage the new bundle completely before touching an existing install.
+        // This also avoids AGY treating npm scope paths containing "@" as
+        // marketplace references.
+        await cp(bundlePath, stagedBundle, { recursive: true });
+
+        if (pluginConfigured) {
+          commands.push(renderCommand(pluginUninstall));
+          const removed = await runCommand(
+            pluginUninstall[0]!,
+            pluginUninstall.slice(1),
             { timeoutMs: COMMAND_TIMEOUT_MS },
           );
-          assertSuccess(plugin, 'agy plugin install');
-          installed = true;
-        } finally {
-          await rm(stagingRoot, { recursive: true, force: true }).catch(
-            () => undefined,
-          );
+          assertSuccess(removed, 'agy plugin uninstall');
         }
+
+        const stagedInstall = ['agy', 'plugin', 'install', stagedBundle];
+        commands.push(renderCommand(stagedInstall));
+        const plugin = await runCommand(
+          stagedInstall[0]!,
+          stagedInstall.slice(1),
+          { timeoutMs: COMMAND_TIMEOUT_MS },
+        );
+        assertSuccess(plugin, 'agy plugin install');
+        installed = true;
+      } finally {
+        await rm(stagingRoot, { recursive: true, force: true }).catch(
+          () => undefined,
+        );
       }
 
       commands.push(renderCommand(pluginEnable));
@@ -326,7 +340,7 @@ async function installOne(
     };
   }
 
-  if (pluginConfigured && !directMcpRemoved) {
+  if (pluginConfigured && !installed && !directMcpRemoved) {
     return {
       host,
       status: 'skipped',
@@ -344,7 +358,11 @@ async function installOne(
     status: installed ? 'installed' : 'skipped',
     commands,
     detail:
-      (installed ? 'Native agentmux plugin installed.' : 'Plugin already installed.') +
+      (installed
+        ? pluginConfigured
+          ? 'Native agentmux plugin refreshed.'
+          : 'Native agentmux plugin installed.'
+        : 'Plugin already installed.') +
       (directMcpRemoved ? ' Direct MCP registration removed.' : ''),
     directMcpRemoved,
   };

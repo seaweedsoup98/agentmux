@@ -249,8 +249,17 @@ const claude: ProviderAdapter = {
   },
 };
 
+const ANTIGRAVITY_READONLY_AGENT = 'agentmux-readonly';
+
 function antigravityPermissionArgs(access: AccessMode): string[] {
-  if (access === 'read-only') return ['--mode=plan', '--sandbox'];
+  if (access === 'read-only') {
+    return [
+      '--mode=plan',
+      '--sandbox',
+      '--agent',
+      ANTIGRAVITY_READONLY_AGENT,
+    ];
+  }
   if (access === 'full') {
     return ['--mode=accept-edits', '--dangerously-skip-permissions'];
   }
