@@ -1,19 +1,107 @@
 # agentmux
 
-Use any coding agent as a subagent of another — across Codex, Claude Code, Gemini, and more.
+**Use Codex, Claude Code, and Antigravity as each other's subagents — without leaving the coding-agent UI you already use.**
 
-> Early alpha. The goal is a small orchestration runtime, not another multi-agent UI.
+[![npm](https://img.shields.io/npm/v/%40jiho.ko%2Fagentmux?label=npm)](https://www.npmjs.com/package/@jiho.ko/agentmux)
+[![CI](https://github.com/seaweedsoup98/agentmux/actions/workflows/ci.yml/badge.svg)](https://github.com/seaweedsoup98/agentmux/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-`agentmux` lets you keep using the coding-agent interface you already like and delegate work to other installed coding-agent CLIs through one MCP server.
+`agentmux` is a local MCP orchestration layer for coding-agent CLIs. Keep Codex, Claude Code, or Antigravity as your control tower, then delegate work to other installed providers while preserving their native sessions.
+
+## Quick start
+
+**Requirements:** Node.js 20+ and at least one supported provider CLI installed (`codex`, `claude`, or `agy`).
+
+Install agentmux as a native plugin in every supported coding-agent host already installed on your machine:
+
+```bash
+npx -y '@jiho.ko/agentmux@latest' plugins install
+```
+
+Check the result:
+
+```bash
+npx -y '@jiho.ko/agentmux@latest' plugins status
+```
+
+Then restart or open a new Codex, Claude Code, or Antigravity session so the plugin's MCP tools and orchestration skill are loaded.
+
+If you previously registered agentmux as a direct MCP server, migrate to the native plugin and remove the duplicate registration only after plugin installation succeeds:
+
+```bash
+npx -y '@jiho.ko/agentmux@latest' plugins install --replace-mcp
+```
+
+## Why agentmux?
+
+- **Keep your existing agent UI.** No separate multi-agent dashboard is required; Codex, Claude Code, or Antigravity stays in control.
+- **Mix providers in one task.** A Codex session can delegate to Claude Code or Antigravity, and managed agents can spawn children across providers.
+- **Preserve native conversations.** Codex `thread_id`, Claude `session_id`, and Antigravity `conversation_id` are retained so work can resume in the same provider-native session.
+- **Delegate durable work.** Jobs run through a detached local broker, while messages, delegations, and orchestration events are persisted across MCP/UI process restarts.
+- **Parallelize without immediately colliding on files.** Writable agents can be isolated in Git worktrees, with explicit diff/apply control before changes reach the base workspace.
+- **Reuse provider authentication.** agentmux invokes the installed provider CLIs and does not store provider credentials itself.
+- **Install as native plugins.** Codex, Claude Code, and Antigravity are all supported through one installer command.
+
+## Use cases
+
+### Cross-provider control tower
+
+Keep your preferred agent as the supervisor and send specialist work elsewhere.
 
 ```text
-Codex / Claude Code / any MCP host
-              |
-          agentmux MCP
-        /      |       \
-     Codex   Claude   Antigravity
-                      (Gemini)
+Use Codex as the control tower.
+Ask Claude Code to review the API design.
+Ask Antigravity to inspect the implementation for edge cases.
+Wait for both and summarize the disagreements.
 ```
+
+### Parallel independent review
+
+Run multiple providers on the same question before committing to a change.
+
+```text
+Spawn one Codex and one Antigravity reviewer for this pull request.
+Have them review independently, then compare their findings.
+```
+
+### Builder + reviewer
+
+Separate implementation from verification.
+
+```text
+Delegate the implementation to Claude Code in an isolated worktree.
+Have Codex review the resulting diff before applying it to the main workspace.
+```
+
+### Long-running delegated work
+
+Start work from one UI and let the local broker keep ownership if that UI or MCP process exits. Reconnect later through the shared state, job, delegation, and event APIs.
+
+## Supported providers
+
+| Provider | Worker CLI | Native plugin | Native session resume |
+| --- | --- | --- | --- |
+| Codex | `codex` | ✓ | `thread_id` |
+| Claude Code | `claude` | ✓ | `session_id` |
+| Antigravity | `agy` | ✓ | `conversation_id` |
+
+## How it works
+
+```text
+          your existing coding-agent UI
+     Codex / Claude Code / Antigravity
+                     |
+                agentmux MCP
+                     |
+          local orchestration runtime
+          /          |           \
+       Codex       Claude     Antigravity
+       worker      worker        worker
+```
+
+The interactive host can remain the external control tower, or a managed agent can supervise nested children. agentmux supplies the shared session, delegation, messaging, event, execution, and workspace layer rather than introducing another UI.
+
+> **Status:** early alpha. The core runtime and real Codex ↔ Antigravity delegation path are validated, but command surfaces and plugin integration may still evolve.
 
 ## Current scope
 
