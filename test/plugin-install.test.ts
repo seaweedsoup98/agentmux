@@ -79,6 +79,7 @@ if (args[0] === '--version') {
 }
 if (args[0] === 'plugin' && args[1] === 'list') process.exit(0);
 fs.appendFileSync(${logLiteral}, 'agy ' + JSON.stringify(args) + '\\n');
+if (args[0] === 'plugin' && args[1] === 'uninstall') process.exit(0);
 if (args[0] === 'plugin' && args[1] === 'install') {
   const source = args[2] || '';
   if (source.includes('@')) {
@@ -254,5 +255,80 @@ process.exit(2);
     process.env.PATH = previousPath;
     if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
     else process.env.CODEX_HOME = previousCodexHome;
+  }
+});
+
+
+test('native plugin installer refreshes an existing Antigravity plugin before enabling it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agentmux-plugin-refresh-'));
+  const bin = join(root, 'bin');
+  const home = join(root, 'home');
+  const logPath = join(root, 'commands.log');
+  await mkdir(bin);
+  await mkdir(home);
+
+  const logLiteral = JSON.stringify(logPath);
+  await writeFakeCommand(bin, 'agy', `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  console.log('agy 7.7.7');
+  process.exit(0);
+}
+if (args[0] === 'plugin' && args[1] === 'list') {
+  console.log('agentmux enabled');
+  process.exit(0);
+}
+fs.appendFileSync(${logLiteral}, 'agy ' + JSON.stringify(args) + '\\n');
+if (args[0] === 'plugin' && args[1] === 'uninstall' && args[2] === 'agentmux') {
+  process.exit(0);
+}
+if (args[0] === 'plugin' && args[1] === 'install') {
+  const source = args[2] || '';
+  if (!fs.existsSync(path.join(source, 'plugin.json'))) process.exit(3);
+  if (!fs.existsSync(path.join(source, 'agents', 'agentmux-readonly.md'))) {
+    console.error('read-only agent missing from refreshed bundle');
+    process.exit(4);
+  }
+  process.exit(0);
+}
+if (args[0] === 'plugin' && args[1] === 'enable' && args[2] === 'agentmux') {
+  process.exit(0);
+}
+process.exit(2);
+`);
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + delimiter + dirname(process.execPath);
+
+  try {
+    const result = await installNativePlugins({
+      hosts: ['antigravity'],
+      homeDir: home,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.actions[0]?.status, 'installed');
+    assert.match(result.actions[0]?.detail ?? '', /refreshed/i);
+
+    const lines = (await readFile(logPath, 'utf8'))
+      .trim()
+      .split('\n');
+    const uninstallIndex = lines.findIndex((line) =>
+      line.includes('["plugin","uninstall","agentmux"]'),
+    );
+    const installIndex = lines.findIndex((line) =>
+      line.startsWith('agy ["plugin","install",'),
+    );
+    const enableIndex = lines.findIndex((line) =>
+      line.includes('["plugin","enable","agentmux"]'),
+    );
+
+    assert.ok(uninstallIndex >= 0);
+    assert.ok(installIndex > uninstallIndex);
+    assert.ok(enableIndex > installIndex);
+  } finally {
+    process.env.PATH = previousPath;
   }
 });
