@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { appendEvent } from './events.js';
 import { LocalExecutionController } from './execution.js';
+import { inspectProviderModels, resolveProviderModel } from './models.js';
 import { listProviders } from './providers.js';
 import { StateStore } from './state.js';
 import {
@@ -146,6 +147,10 @@ export class AgentManager {
     return listProviders();
   }
 
+  async models(provider: ProviderName, query?: string) {
+    return inspectProviderModels(provider, query);
+  }
+
   async whoami(): Promise<
     | { managed: false }
     | { managed: true; agent: AgentSession; team?: AgentTeam }
@@ -234,6 +239,10 @@ export class AgentManager {
   }
 
   async spawn(options: SpawnOptions): Promise<{ agent: AgentSession; job: AgentJob }> {
+    const resolvedModel = await resolveProviderModel(
+      options.provider,
+      options.model,
+    );
     const baseCwd = resolve(options.cwd ?? process.cwd());
     const info = await stat(baseCwd);
     if (!info.isDirectory()) throw new Error('cwd is not a directory: ' + baseCwd);
@@ -313,7 +322,7 @@ export class AgentManager {
         name: options.name,
         provider: options.provider,
         cwd,
-        model: options.model,
+        model: resolvedModel,
         effort: options.effort,
         role: options.role,
         access,
@@ -346,6 +355,7 @@ export class AgentManager {
           access: agent.access,
           workspace: agent.workspace ?? 'shared',
           ...(agent.role ? { role: agent.role } : {}),
+          ...(agent.model ? { model: agent.model } : {}),
         },
       });
       appendEvent(state, {

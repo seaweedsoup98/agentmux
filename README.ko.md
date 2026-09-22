@@ -26,7 +26,7 @@ npx -y '@jiho.ko/agentmux@latest' plugins install
 npx -y '@jiho.ko/agentmux@latest' plugins status
 ```
 
-설치 후에는 Codex, Claude Code, Antigravity를 재시작하거나 새 세션을 열어 plugin의 MCP tool과 orchestration skill을 로드하세요.
+설치 후에는 Codex, Claude Code, Antigravity **프로세스를 완전히 종료한 뒤 다시 실행**해 plugin의 MCP tool과 orchestration skill을 로드하세요. 새 채팅/thread만 여는 것으로는 plugin이 제공하는 MCP server가 다시 로드되지 않을 수 있습니다.
 
 기존에 agentmux를 direct MCP server로 등록해 두었다면, native plugin 설치가 성공한 뒤 중복 MCP 등록까지 안전하게 제거할 수 있습니다.
 
@@ -79,6 +79,20 @@ Claude Code에게 isolated worktree에서 구현을 맡겨.
 
 한 UI에서 작업을 시작한 뒤 해당 UI나 MCP process가 종료되더라도 local broker가 실행 소유권을 유지할 수 있습니다. 이후 shared state, job, delegation, event API를 통해 다시 확인할 수 있습니다.
 
+## 모델명 자동 인식
+
+Antigravity는 모델 목록을 하드코딩하지 않고 설치된 CLI의 `agy models`를 직접 조회합니다. 사용자가 다음처럼 모델명을 조금 다르게 말해도 실행 전에 canonical slug로 변환합니다.
+
+```text
+agy 3.8 flash high
+Gemini 3.8 Flash High
+gemini-3.8-flash-high
+        ↓
+gemini-3.8-flash-high
+```
+
+여러 모델이 동시에 매칭되면 임의로 고르지 않고 후보를 반환합니다. 현재 설치된 모델을 확인하거나 애매한 이름을 해석하려면 MCP `models` tool을 사용할 수 있습니다. Codex와 Claude Code의 모델명은 현재 각 native CLI로 그대로 전달합니다.
+
 ## 지원 provider
 
 | Provider | Worker CLI | Native plugin | Native session resume |
@@ -121,6 +135,7 @@ MCP server는 provider-neutral session API를 제공합니다.
 - `kill` — 실행 중 job 취소 및 session 종료
 - `team_create`, `team_status`, `team_list` — session 그룹과 supervision 구조 관리
 - `providers` — 지원 runtime adapter 확인
+- `models` — provider model 이름 확인. Antigravity는 `agy models`에서 실제 목록을 동적으로 읽고 자연어식 모델명을 canonical slug로 해석
 - `doctor` — provider 설치/auth 상태와 MCP host 설정 확인
 
 각 provider의 native session ID를 그대로 보존합니다.

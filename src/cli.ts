@@ -132,7 +132,7 @@ export async function runCli(argv: string[]): Promise<number> {
       }
 
       process.stdout.write(
-        '\nRestart/open a new agent session after plugin installation so bundled skills and MCP tools are loaded.\n',
+        '\nIMPORTANT: fully exit and relaunch each host after plugin installation. Starting only a new chat/thread may not reload plugin MCP tools.\n',
       );
       return result.ok ? 0 : 1;
     }

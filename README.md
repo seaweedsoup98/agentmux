@@ -26,7 +26,7 @@ Check the result:
 npx -y '@jiho.ko/agentmux@latest' plugins status
 ```
 
-Then restart or open a new Codex, Claude Code, or Antigravity session so the plugin's MCP tools and orchestration skill are loaded.
+Then **fully exit and relaunch** Codex, Claude Code, or Antigravity so the plugin's MCP tools and orchestration skill are loaded. Opening only a new chat/thread may not reload plugin-provided MCP servers.
 
 If you previously registered agentmux as a direct MCP server, migrate to the native plugin and remove the duplicate registration only after plugin installation succeeds:
 
@@ -79,6 +79,20 @@ Have Codex review the resulting diff before applying it to the main workspace.
 
 Start work from one UI and let the local broker keep ownership if that UI or MCP process exits. Reconnect later through the shared state, job, delegation, and event APIs.
 
+## Model name resolution
+
+For Antigravity, agentmux queries the installed CLI with `agy models` instead of hard-coding a model list. Informal names are resolved before a job is created:
+
+```text
+agy 3.8 flash high
+Gemini 3.8 Flash High
+gemini-3.8-flash-high
+        ↓
+gemini-3.8-flash-high
+```
+
+If a request matches multiple installed models, agentmux returns the candidates instead of guessing. The MCP `models` tool can be used to inspect or disambiguate the current catalog. Codex and Claude Code model names currently pass through to their native CLIs.
+
 ## Supported providers
 
 | Provider | Worker CLI | Native plugin | Native session resume |
@@ -121,6 +135,7 @@ The MCP server exposes a provider-neutral session API:
 - `kill` — cancel an active job and stop the session
 - `team_create`, `team_status`, `team_list` — group sessions and record supervision
 - `providers` — show supported runtime adapters
+- `models` — inspect provider model names; Antigravity models are discovered dynamically from `agy models` and informal names can be resolved to canonical slugs
 - `doctor` — report provider install/auth health and MCP-host configuration
 
 Provider sessions are preserved using their native IDs:
