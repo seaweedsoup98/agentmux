@@ -37,7 +37,7 @@ npx -y '@jiho.ko/agentmux@latest' plugins install --replace-mcp
 - **Keep your existing agent UI.** No separate multi-agent dashboard is required; Codex, Claude Code, or Antigravity stays in control.
 - **Mix providers in one task.** A Codex session can delegate to Claude Code or Antigravity, and managed agents can spawn children across providers.
 - **Preserve native conversations.** Codex `thread_id`, Claude `session_id`, and Antigravity `conversation_id` are retained so work can resume in the same provider-native session.
-- **Delegate durable work.** Jobs run through a detached local broker, while messages, delegations, and orchestration events are persisted across MCP/UI process restarts.
+- **Delegate durable work.** By default, jobs run through a detached local broker, while messages, delegations, and orchestration events are persisted across MCP/UI process restarts.
 - **Parallelize without immediately colliding on files.** Writable agents can be isolated in Git worktrees, with explicit diff/apply control before changes reach the base workspace.
 - **Reuse provider authentication.** agentmux invokes the installed provider CLIs and does not store provider credentials itself.
 - **Install as native plugins.** Codex, Claude Code, and Antigravity are all supported through one installer command.
@@ -164,41 +164,9 @@ If the broker cannot start, agentmux falls back to MCP-owned execution and repor
 
 A valid installation can therefore be Codex + Antigravity only, Claude Code only, or even agentmux with no provider installed yet.
 
-## Install and configure
+## Installation details
 
-### Recommended: native plugins
-
-Install agentmux as a native plugin in every supported agent UI that is currently installed:
-
-```bash
-npx -y '@jiho.ko/agentmux@latest' plugins install
-```
-
-Or choose hosts explicitly:
-
-```bash
-npx -y '@jiho.ko/agentmux@latest' plugins install --hosts codex claude antigravity
-```
-
-If you previously configured agentmux as a direct MCP server, migrate to the native plugin and remove the duplicate direct registration only after the plugin install succeeds:
-
-```bash
-npx -y '@jiho.ko/agentmux@latest' plugins install --hosts codex antigravity --replace-mcp
-```
-
-Check the resulting host state:
-
-```bash
-npx -y '@jiho.ko/agentmux@latest' plugins status
-```
-
-The installer uses each host's native plugin mechanism:
-
-- Codex: GitHub marketplace + `codex plugin add agentmux@agentmux`
-- Claude Code: GitHub marketplace + user-scope install + enable
-- Antigravity: `agy plugin install` using the plugin bundle shipped inside the npm package
-
-Restart/open a new agent session after installation so plugin-provided skills and MCP tools are loaded.
+For normal installations, use the **Quick start** at the top of this README. The sections below cover direct-MCP fallback and development setups.
 
 ### Direct MCP fallback
 
