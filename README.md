@@ -428,9 +428,11 @@ This keeps parallel writers reproducible while leaving integration authority wit
 
 | agentmux | Codex | Claude Code | Antigravity |
 | --- | --- | --- | --- |
-| `read-only` | `read-only` sandbox | `plan` permission mode | `plan` mode + terminal sandbox |
+| `read-only` | `read-only` sandbox | `plan` permission mode | `plan` + sandbox + read-only tool profile |
 | `workspace-write` | `workspace-write` sandbox | `acceptEdits` | `accept-edits` + terminal sandbox |
 | `full` | `danger-full-access` | skip permission prompts | `accept-edits` + skip permission prompts |
+
+For Antigravity, `read-only` uses the bundled `agentmux-readonly` custom agent. It exposes only native repository-reading tools (`view_file`, `list_dir`, `find_by_name`, and `grep_search`) and excludes `run_command` plus all file-writing tools. This avoids headless permission prompts for shell-based reads while preserving a true read-only review surface.
 
 These mappings are intentionally conservative and are not identical security models.
 
