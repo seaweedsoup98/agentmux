@@ -118,6 +118,8 @@ test('Antigravity access modes map to explicit execution and sandbox policy', ()
 
   assert.ok(argsFor('read-only').includes('--mode=plan'));
   assert.ok(argsFor('read-only').includes('--sandbox'));
+  assert.ok(argsFor('read-only').includes('--agent'));
+  assert.ok(argsFor('read-only').includes('agentmux-readonly'));
 
   assert.ok(argsFor('workspace-write').includes('--mode=accept-edits'));
   assert.ok(argsFor('workspace-write').includes('--sandbox'));
