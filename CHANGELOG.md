@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.3
+
+### Model resolution
+- Discover the installed Antigravity model catalog dynamically with `agy models`.
+- Resolve informal AGY names such as `agy 3.8 flash high` or `Gemini 3.8 Flash High` to the canonical model slug before spawning.
+- Return ambiguity/nearby candidates instead of silently choosing the wrong model.
+- Add a provider-neutral `models` MCP tool; Antigravity uses dynamic discovery while Codex and Claude Code currently pass model names through to their native CLIs.
+
+### Plugin onboarding
+- Make the post-install restart requirement explicit: fully exit and relaunch Codex, Claude Code, or Antigravity after native plugin installation because opening only a new chat/thread may not reload plugin MCP servers.
+- Update all bundled orchestration skills and English/Korean README guidance.
+
 ## 0.1.2
 
 ### Fixes
