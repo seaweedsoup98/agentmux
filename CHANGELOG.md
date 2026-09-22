@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+### Fixes
+- Fix Antigravity native plugin installation from scoped npm packages on Linux/macOS by staging the bundled plugin in an `@`-free temporary local path before calling `agy plugin install`.
+- Add a regression test that rejects scoped/marketplace-like install paths and verifies the staged plugin contains `plugin.json`.
+
 ## 0.1.1
 
 ### Native plugin installation

@@ -1,4 +1,5 @@
-import { homedir } from 'node:os';
+import { cp, mkdtemp, rm } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { doctorHosts, doctorProviders } from './doctor.js';
@@ -245,21 +246,41 @@ async function installOne(
     const bundlePath = fileURLToPath(
       new URL('../plugins/antigravity/', import.meta.url),
     );
-    const pluginInstall = ['agy', 'plugin', 'install', bundlePath];
     const pluginEnable = ['agy', 'plugin', 'enable', 'agentmux'];
-    commands.push(renderCommand(pluginInstall), renderCommand(pluginEnable));
 
-    if (!options.dryRun && !pluginConfigured) {
-      const plugin = await runCommand(
-        pluginInstall[0]!,
-        pluginInstall.slice(1),
-        { timeoutMs: COMMAND_TIMEOUT_MS },
-      );
-      assertSuccess(plugin, 'agy plugin install');
-      installed = true;
-    }
+    if (options.dryRun) {
+      const pluginInstall = [
+        'agy',
+        'plugin',
+        'install',
+        '<temporary-local-agentmux-plugin-path>',
+      ];
+      commands.push(renderCommand(pluginInstall), renderCommand(pluginEnable));
+    } else {
+      if (!pluginConfigured) {
+        const stagingRoot = await mkdtemp(
+          join(tmpdir(), 'agentmux-antigravity-plugin-'),
+        );
+        const stagedBundle = join(stagingRoot, 'agentmux');
+        try {
+          await cp(bundlePath, stagedBundle, { recursive: true });
+          const pluginInstall = ['agy', 'plugin', 'install', stagedBundle];
+          commands.push(renderCommand(pluginInstall));
+          const plugin = await runCommand(
+            pluginInstall[0]!,
+            pluginInstall.slice(1),
+            { timeoutMs: COMMAND_TIMEOUT_MS },
+          );
+          assertSuccess(plugin, 'agy plugin install');
+          installed = true;
+        } finally {
+          await rm(stagingRoot, { recursive: true, force: true }).catch(
+            () => undefined,
+          );
+        }
+      }
 
-    if (!options.dryRun) {
+      commands.push(renderCommand(pluginEnable));
       const enabled = await runCommand(
         pluginEnable[0]!,
         pluginEnable.slice(1),

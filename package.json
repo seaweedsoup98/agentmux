@@ -1,6 +1,6 @@
 {
   "name": "@jiho.ko/agentmux",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Use any coding agent as a subagent of another — across Codex, Claude Code, Gemini, and more.",
   "type": "module",
   "bin": {
