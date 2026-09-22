@@ -1,5 +1,7 @@
 # agentmux
 
+**English** | [한국어](README.ko.md)
+
 **Use Codex, Claude Code, and Antigravity as each other's subagents — without leaving the coding-agent UI you already use.**
 
 [![npm](https://img.shields.io/npm/v/%40jiho.ko%2Fagentmux?label=npm)](https://www.npmjs.com/package/@jiho.ko/agentmux)
