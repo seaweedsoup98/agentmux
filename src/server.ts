@@ -27,7 +27,9 @@ export function buildServer(manager: AgentManager): McpServer {
         'Managed child agents should call whoami to discover their identity and team. Prefer message_send for attributed ' +
         'agent-to-agent communication; wake=true starts a new turn only when the recipient is idle and resumable. ' +
         'When a managed agent wakes a peer and needs that work to finish, it should wait for the returned wakeJob before ending its own turn. ' +
-        'Use inbox/message_ack for persisted messages. Use doctor before assuming every worker provider is installed or authenticated. Use delegate/delegation_* when work ownership or completion must be tracked explicitly. Use events/events_wait to observe durable orchestration history across hosts. Prefer spawn_many for independent parallel tasks and wait instead ' +
+        'Use inbox/message_ack for persisted messages. Use doctor before assuming every worker provider is installed or authenticated. ' +
+        'When the user names an Antigravity model informally, agentmux resolves it dynamically against "agy models"; use the models tool when you need to inspect or disambiguate the installed model catalog. ' +
+        'Use delegate/delegation_* when work ownership or completion must be tracked explicitly. Use events/events_wait to observe durable orchestration history across hosts. Prefer spawn_many for independent parallel tasks and wait instead ' +
         'of tight result polling. Use read-only access for analysis/review unless edits are needed. Keep workspace=auto ' +
         'unless explicit isolation is required. Do not use full access unless the task requires it.',
     },
@@ -574,6 +576,25 @@ export function buildServer(manager: AgentManager): McpServer {
       inputSchema: z.object({}),
     },
     async () => text(manager.providers()),
+  );
+
+  server.registerTool(
+    'models',
+    {
+      description:
+        'Inspect provider model names. Antigravity models are discovered dynamically from the installed AGY CLI and an optional informal query is resolved to a canonical model slug. Codex and Claude currently report pass-through guidance.',
+      inputSchema: z.object({
+        provider: z.enum(PROVIDERS),
+        query: z.string().min(1).optional(),
+      }),
+    },
+    async ({ provider, query }) => {
+      try {
+        return text(await manager.models(provider, query));
+      } catch (error) {
+        return failure(error);
+      }
+    },
   );
 
   server.registerTool(
