@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agentmux",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Cross-provider coding-agent orchestration for Codex and compatible Agent Plugins clients.",
   "author": {
     "name": "agentmux"
